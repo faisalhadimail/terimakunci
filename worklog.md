@@ -475,3 +475,22 @@ Stage Summary:
 - All scrolling is contained within the main content area
 - Bottom tab bar stays at the bottom of the mobile container
 - Dev server compiled successfully, lint passes
+
+---
+Task ID: 2
+Agent: main-agent
+Task: Redesign Database tab with interactive Supabase setup wizard
+
+Work Log:
+- Added dbStep, dbTestLoading, dbTestResult state variables
+- Added handleTestConnection function
+- Added new icon imports (ExternalLink, Play, CircleDot, ArrowRight, CheckCircle, XCircle, Info)
+- Replaced old database tab with 6-step interactive wizard
+- Steps: Persiapan → Kredensial → Test Koneksi → Buat Database → Generate File → Deploy
+
+Stage Summary:
+- Interactive step wizard for Supabase setup
+- Connection test with visual feedback
+- DDL/Seed/Schema/ENV generation with copy & download
+- Deploy checklist and command reference
+- Changed default port from 5432 to 6543 (Supabase pooler)
