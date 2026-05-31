@@ -79,6 +79,7 @@ export interface Property {
   buildingCond?: string;
   orientation?: string;
   facilities?: string;
+  visibleSpecs?: string;
   mainImage?: string;
   videoUrl?: string;
   virtualTourUrl?: string;

@@ -4,24 +4,10 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   ChevronLeft,
   MapPin,
-  Bed,
-  Bath,
-  Maximize,
-  Building2,
-  Car,
-  Layers,
-  Zap,
-  Droplets,
-  FileCheck,
-  Compass,
-  Home,
   Phone,
   MessageCircle,
-  Share2,
   Calculator,
-  Star,
   ArrowLeft,
-  ImageIcon,
   Copy,
   Check,
   Facebook,
@@ -37,7 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Separator } from '@/components/ui/separator';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import PropertyCard from './PropertyCard';
@@ -207,17 +193,6 @@ export default function PropertyDetailPage() {
       });
     }
     return imgs.length > 0 ? imgs : ['/placeholder-property.jpg'];
-  }, [property]);
-
-  const facilities = useMemo(() => {
-    if (!property?.facilities) return [];
-    try {
-      const parsed = JSON.parse(property.facilities);
-      if (Array.isArray(parsed)) return parsed;
-    } catch {
-      // Fallback to comma-separated parsing
-    }
-    return property.facilities.split(',').map((f) => f.trim()).filter(Boolean);
   }, [property]);
 
   const kprRate = parseFloat(getSetting('kpr_interest_rate', '7')) || 7;
@@ -450,34 +425,6 @@ export default function PropertyDetailPage() {
         )}
       </div>
 
-      <Separator className="my-4" />
-
-      {/* Specifications */}
-      <div className="grid grid-cols-4 gap-2">
-        <SpecItem icon={Maximize} label="Luas Tanah" value={`${property.landArea} m²`} />
-        <SpecItem icon={Building2} label="Bangunan" value={`${property.buildingArea} m²`} />
-        <SpecItem icon={Bed} label="Tidur" value={property.bedrooms > 0 ? `${property.bedrooms}` : '-'} />
-        <SpecItem icon={Bath} label="Mandi" value={property.bathrooms > 0 ? `${property.bathrooms}` : '-'} />
-        <SpecItem icon={Car} label="Garasi" value={property.garages > 0 ? `${property.garages}` : '-'} />
-        <SpecItem icon={Layers} label="Lantai" value={property.floors > 0 ? `${property.floors}` : '-'} />
-        <SpecItem icon={Zap} label="Listrik" value={property.electricity || '-'} />
-        <SpecItem icon={FileCheck} label="Sertifikat" value={property.certificate || '-'} />
-      </div>
-
-      {/* Facilities */}
-      {facilities.length > 0 && (
-        <div className="mt-4">
-          <h3 className="text-sm font-semibold text-gray-900 mb-2">Fasilitas</h3>
-          <div className="flex flex-wrap gap-1.5">
-            {facilities.map((f, i) => (
-              <Badge key={i} variant="secondary" className="text-[11px]">
-                {f}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Description */}
       {property.description && (
         <div className="mt-4">
@@ -671,20 +618,4 @@ export default function PropertyDetailPage() {
   );
 }
 
-function SpecItem({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex flex-col items-center text-center bg-gray-50 rounded-lg p-2">
-      <Icon className="size-4 text-emerald-600 mb-0.5" />
-      <span className="text-[10px] text-gray-500">{label}</span>
-      <span className="text-xs font-semibold text-gray-900">{value}</span>
-    </div>
-  );
-}
+

@@ -557,3 +557,39 @@ Stage Summary:
 - Real bcrypt hashes ensure password authentication works
 - Admin login verified: admin@properti.com / admin123
 - All 3 agent accounts verified working
+---
+Task ID: 15
+Agent: Main
+Task: Make Spesifikasi and Fasilitas display optional with checkboxes
+
+Work Log:
+- Added `visibleSpecs` field (String?, JSON array) to Prisma schema Property model
+- Pushed schema change to Supabase with `prisma db push`
+- Updated AdminPropertyForm.tsx:
+  - Added state `visibleSpecs` (string array) with toggle functions
+  - Added 11 checkboxes (one per spec field) at top of Spesifikasi card
+  - Added "Tampilkan Semua" and "Sembunyikan Semua" buttons
+  - Added counter showing "X dari 11 dipilih"
+  - Label styling dims unselected specs (text-muted-foreground)
+  - Fasilitas checkbox shown as disabled (auto-shows if filled)
+  - FormLabel dimmed for unchecked specs
+  - Facilities section shows note "otomatis ditampilkan di frontend jika diisi"
+  - `visibleSpecs` serialized as JSON string in payload on submit
+  - Parsed from existing property on edit load
+- Updated PropertyDetailPage.tsx:
+  - Added `visibleSpecs` parsing from property.visibleSpecs JSON
+  - Created `allSpecItems` array with 11 spec entries (now includes waterSource, buildingCond, orientation with icons Droplets, Hammer, Compass)
+  - Created `displayedSpecs` that filters by visibleSpecs + hasValue
+  - Backward compatible: if visibleSpecs is null/empty, shows all specs with values
+  - Replaced hardcoded 8 SpecItems with dynamic displayedSpecs rendering
+- Updated types.ts with `visibleSpecs?: string`
+- Updated existing properties in Supabase with default visibleSpecs
+- Verified API returns `visibleSpecs` field correctly
+
+Stage Summary:
+- Spesifikasi and Fasilitas are now optional on frontend display
+- Admin form has checkboxes to control which specs are visible (11 checkboxes)
+- Fasilitas auto-shows if filled (no checkbox needed)
+- Frontend only renders specs that are both checked AND have values
+- Backward compatible: existing properties without visibleSpecs show all specs with values
+- Added 3 new spec types to frontend: Sumber Air, Kondisi Bangunan, Arah Hadap

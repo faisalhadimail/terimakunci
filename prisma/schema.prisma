@@ -132,6 +132,7 @@ model Property {
   buildingCond    String?  // baru, second, renovasi
   orientation     String?  // utara, selatan, timur, barat
   facilities      String?  // JSON array of facilities
+  visibleSpecs     String?  // JSON array of spec keys to show on frontend, e.g. ["landArea","bedrooms","certificate"]
 
   // Media
   mainImage       String?

@@ -19,7 +19,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Save, ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Save, ArrowLeft, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import { fetchWithAuth } from '@/lib/api';
 
 const propertySchema = z.object({
@@ -48,6 +48,7 @@ const propertySchema = z.object({
   buildingCond: z.string().optional(),
   orientation: z.string().optional(),
   facilities: z.string().optional(),
+  visibleSpecs: z.string().optional(),
   description: z.string().optional(),
   mainImage: z.string().optional(),
   videoUrl: z.string().optional(),
@@ -68,6 +69,21 @@ export default function AdminPropertyForm() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [images, setImages] = useState<string[]>([]);
+  const [visibleSpecs, setVisibleSpecs] = useState<string[]>([]);
+
+  const allSpecKeys = ['landArea', 'buildingArea', 'bedrooms', 'bathrooms', 'garages', 'floors', 'electricity', 'waterSource', 'certificate', 'buildingCond', 'orientation'];
+  const specLabels: Record<string, string> = {
+    landArea: 'Luas Tanah', buildingArea: 'Luas Bangunan', bedrooms: 'Kamar Tidur',
+    bathrooms: 'Kamar Mandi', garages: 'Garasi', floors: 'Lantai',
+    electricity: 'Listrik', waterSource: 'Sumber Air', certificate: 'Sertifikat',
+    buildingCond: 'Kondisi Bangunan', orientation: 'Arah Hadap',
+  };
+
+  const toggleVisibleSpec = (key: string) => {
+    setVisibleSpecs(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
 
   const propertyTypes = useDataCache((s) => s.propertyTypes);
   const cities = useDataCache((s) => s.cities);
@@ -169,6 +185,7 @@ export default function AdminPropertyForm() {
               buildingCond: p.buildingCond || '',
               orientation: p.orientation || '',
               facilities: p.facilities || '',
+              visibleSpecs: p.visibleSpecs || '',
               description: p.description || '',
               mainImage: p.mainImage || '',
               videoUrl: p.videoUrl || '',
@@ -179,6 +196,11 @@ export default function AdminPropertyForm() {
               metaKeywords: p.metaKeywords || '',
             });
             if (p.images) setImages(p.images.map((img: { url: string }) => img.url));
+            // Parse visibleSpecs
+            try {
+              const parsed = JSON.parse(p.visibleSpecs || '[]');
+              if (Array.isArray(parsed)) setVisibleSpecs(parsed);
+            } catch { setVisibleSpecs([]); }
           }
         }
       } finally {
@@ -191,7 +213,7 @@ export default function AdminPropertyForm() {
   const onSubmit = async (data: PropertyFormData) => {
     setSaving(true);
     try {
-      const payload = { ...data, images: images.map((url) => ({ url, altText: '', sortOrder: 0 })) };
+      const payload = { ...data, visibleSpecs: JSON.stringify(visibleSpecs), images: images.map((url) => ({ url, altText: '', sortOrder: 0 })) };
       const url = isEdit ? `/api/properties/${propertyId}` : '/api/properties';
       const method = isEdit ? 'PUT' : 'POST';
       const res = await fetchWithAuth(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -369,19 +391,58 @@ export default function AdminPropertyForm() {
 
           {/* Specifications */}
           <Card>
-            <CardHeader><CardTitle className="text-base">Spesifikasi</CardTitle></CardHeader>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Spesifikasi</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" className="text-xs h-7" onClick={() => setVisibleSpecs(allSpecKeys)}>
+                    <Eye className="h-3 w-3 mr-1" /> Tampilkan Semua
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="text-xs h-7" onClick={() => setVisibleSpecs([])}>
+                    <EyeOff className="h-3 w-3 mr-1" /> Sembunyikan Semua
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Centang spesifikasi yang ingin ditampilkan di halaman detail properti. {visibleSpecs.length} dari {allSpecKeys.length} dipilih.</p>
+            </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {/* Visible specs checkboxes row */}
+              <div className="sm:col-span-2 lg:col-span-4">
+                <div className="flex flex-wrap gap-2">
+                  {allSpecKeys.map((key) => (
+                    <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
+                      <Checkbox
+                        checked={visibleSpecs.includes(key)}
+                        onCheckedChange={() => toggleVisibleSpec(key)}
+                        className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                      />
+                      <span className={`text-xs ${visibleSpecs.includes(key) ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
+                        {specLabels[key]}
+                      </span>
+                    </label>
+                  ))}
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <Checkbox
+                      checked={!!property?.facilities}
+                      disabled
+                      className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                    />
+                    <span className="text-xs text-gray-400">Fasilitas (otomatis jika ada)</span>
+                  </label>
+                </div>
+              </div>
+              <Separator className="sm:col-span-2 lg:col-span-4" />
               {[
-                { name: 'landArea' as const, label: 'Luas Tanah (m²)' },
-                { name: 'buildingArea' as const, label: 'Luas Bangunan (m²)' },
-                { name: 'bedrooms' as const, label: 'Kamar Tidur' },
-                { name: 'bathrooms' as const, label: 'Kamar Mandi' },
-                { name: 'garages' as const, label: 'Garasi' },
-                { name: 'floors' as const, label: 'Lantai' },
-              ].map(({ name, label }) => (
+                { name: 'landArea' as const, label: 'Luas Tanah (m²)', visible: visibleSpecs.includes('landArea') },
+                { name: 'buildingArea' as const, label: 'Luas Bangunan (m²)', visible: visibleSpecs.includes('buildingArea') },
+                { name: 'bedrooms' as const, label: 'Kamar Tidur', visible: visibleSpecs.includes('bedrooms') },
+                { name: 'bathrooms' as const, label: 'Kamar Mandi', visible: visibleSpecs.includes('bathrooms') },
+                { name: 'garages' as const, label: 'Garasi', visible: visibleSpecs.includes('garages') },
+                { name: 'floors' as const, label: 'Lantai', visible: visibleSpecs.includes('floors') },
+              ].map(({ name, label, visible }) => (
                 <FormField key={name} name={name} render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{label}</FormLabel>
+                    <FormLabel className={visible ? '' : 'text-muted-foreground'}>{label}</FormLabel>
                     <FormControl><Input type="number" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -389,19 +450,19 @@ export default function AdminPropertyForm() {
               ))}
               <FormField name="electricity" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Listrik</FormLabel>
+                  <FormLabel className={visibleSpecs.includes('electricity') ? '' : 'text-muted-foreground'}>Listrik</FormLabel>
                   <FormControl><Input {...field} placeholder="Contoh: 2200 watt" /></FormControl>
                 </FormItem>
               )} />
               <FormField name="waterSource" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Sumber Air</FormLabel>
+                  <FormLabel className={visibleSpecs.includes('waterSource') ? '' : 'text-muted-foreground'}>Sumber Air</FormLabel>
                   <FormControl><Input {...field} placeholder="Contoh: PDAM" /></FormControl>
                 </FormItem>
               )} />
               <FormField name="certificate" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Sertifikat</FormLabel>
+                  <FormLabel className={visibleSpecs.includes('certificate') ? '' : 'text-muted-foreground'}>Sertifikat</FormLabel>
                   <Select value={field.value || ''} onValueChange={field.onChange}>
                     <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Pilih sertifikat" /></SelectTrigger></FormControl>
                     <SelectContent>
@@ -415,7 +476,7 @@ export default function AdminPropertyForm() {
               )} />
               <FormField name="buildingCond" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Kondisi Bangunan</FormLabel>
+                  <FormLabel className={visibleSpecs.includes('buildingCond') ? '' : 'text-muted-foreground'}>Kondisi Bangunan</FormLabel>
                   <Select value={field.value || ''} onValueChange={field.onChange}>
                     <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Pilih kondisi" /></SelectTrigger></FormControl>
                     <SelectContent>
@@ -429,7 +490,7 @@ export default function AdminPropertyForm() {
               )} />
               <FormField name="orientation" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Arah Hadap</FormLabel>
+                  <FormLabel className={visibleSpecs.includes('orientation') ? '' : 'text-muted-foreground'}>Arah Hadap</FormLabel>
                   <Select value={field.value || ''} onValueChange={field.onChange}>
                     <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Pilih arah" /></SelectTrigger></FormControl>
                     <SelectContent>
@@ -444,6 +505,7 @@ export default function AdminPropertyForm() {
                 <FormItem className="sm:col-span-2">
                   <FormLabel>Fasilitas</FormLabel>
                   <FormControl><Textarea {...field} placeholder="Contoh: Kolam Renang, Taman, CCTV, Keamanan 24 Jam (pisahkan dengan koma)" rows={2} /></FormControl>
+                  <FormDescription className="text-xs">Fasilitas otomatis ditampilkan di frontend jika diisi.</FormDescription>
                 </FormItem>
               )} />
             </CardContent>
