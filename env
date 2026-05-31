@@ -1,0 +1,21 @@
+# ============================================
+# PropNusa Environment Variables
+# Database: Supabase (PostgreSQL)
+# ============================================
+
+# Database Connection (Supabase)
+DATABASE_URL="postgresql://postgres.xxxxx:your-password-here@db.xxxxx.supabase.co:5432/postgres?pgbouncer=true&connect_timeout=15"
+
+# Direct connection (untuk migration)
+DIRECT_URL="postgresql://postgres.xxxxx:your-password-here@db.xxxxx.supabase.co:5432/postgres?connect_timeout=15"
+
+# Connection Pool (Supabase Pooler)
+DATABASE_URL_POOL="postgresql://postgres.xxxxx:your-password-here@db.xxxxx.supabase.co:5432/postgres?pgbouncer=true&connect_timeout=15"
+
+# App Config
+NEXT_PUBLIC_APP_URL="https://www.propnusa.com"
+NEXTAUTH_SECRET="your-secret-key-min-32-characters"
+NEXTAUTH_URL="https://www.propnusa.com"
+
+# Connection Pool Size
+DATABASE_POOL_SIZE=10
