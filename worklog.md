@@ -518,3 +518,42 @@ Stage Summary:
 - All API endpoints working with PostgreSQL connection
 - Shell DATABASE_URL override was the root cause of connection failure
 - Next deployment will use .env file correctly (no shell override in production)
+
+---
+Task ID: 4
+Agent: Fullstack Developer
+Task: Seed Supabase database with proper data using real bcrypt hashes
+
+Work Log:
+- Analyzed existing prisma/seed.ts and prisma/schema.prisma to understand data model
+- Rewrote prisma/seed.ts from scratch to match exact specifications:
+  - 11 Property Types: Rumah, Tanah, Ruko, Apartemen, Villa, Gudang, Kantor, Kost, Pabrik, Kavling, Komersial
+  - 3 Provinces: Jawa Barat, Jawa Timur, Bali
+  - 5 Cities: Bandung, Bogor, Surabaya, Malang, Denpasar
+  - 6 Districts: Coblong, Cidadap, Cimahi, Gubeng, Kuta, Ubud
+  - 1 Admin user: admin@properti.com / admin123 (name: Administrator, role: super_admin)
+  - 3 Agent users: agen1 (Budi Santoso), agen2 (Siti Rahayu), agen3 (Ahmad Wijaya)
+  - 3 Agent Profiles with whatsapp, bio, area spec
+  - 15 Website Settings (general, contact, seo, social groups)
+  - 5 Article Categories: Tips Properti, Berita Properti, Panduan KPR, Investasi, Hukum Properti
+  - 8 Published Properties with real Unsplash images, different types, cities, BigInt prices
+  - 3 Published Articles
+  - 3 Sample Leads
+- Used `import bcrypt from 'bcryptjs'` and `bcrypt.hash('admin123', 10)` for real bcrypt hashing
+- Used `BigInt()` properly for prices (e.g., BigInt(5500000000) for Rp 5.5 Miliar)
+- Added `"seed": "npx tsx prisma/seed.ts"` script to package.json
+- Ran seed script successfully with DATABASE_URL environment variable
+
+Verification results:
+- Settings API: 18 settings (15 new + 3 pre-existing from settings upsert)
+- Properties API: 8 published properties returned
+- Admin login: OK (admin@properti.com / admin123) - bcrypt hash verified
+- Agent 1 login: OK (Budi Santoso)
+- Agent 2 login: OK (Siti Rahayu)
+- Agent 3 login: OK (Ahmad Wijaya)
+
+Stage Summary:
+- Database fully populated with all required data
+- Real bcrypt hashes ensure password authentication works
+- Admin login verified: admin@properti.com / admin123
+- All 3 agent accounts verified working
