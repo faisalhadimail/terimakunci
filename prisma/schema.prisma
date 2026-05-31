@@ -1,10 +1,17 @@
+// ============================================
+// PropNusa Prisma Schema - PostgreSQL / Supabase
+// Ganti file prisma/schema.prisma dengan ini
+// Lalu jalankan: npx prisma db push
+// ============================================
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ============ USER & AUTH ============
@@ -15,7 +22,7 @@ model User {
   password      String
   phone         String?
   avatar        String?
-  role          String   @default("admin") // super_admin, admin, editor, agent, viewer, seo_manager
+  role          String   @default("admin")
   isActive      Boolean  @default(true)
   lastLogin     DateTime?
   createdAt     DateTime @default(now())
@@ -31,7 +38,7 @@ model User {
 // ============ PROPERTY TYPE ============
 model PropertyType {
   id          String   @id @default(cuid())
-  name        String   @unique // Rumah, Tanah, Ruko, Apartemen, Villa, Gudang, Kantor, Kost, Pabrik, Kavling, Komersial
+  name        String   @unique
   slug        String   @unique
   icon        String?
   description String?
@@ -86,8 +93,8 @@ model Village {
   name       String
   slug       String
   districtId String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   district  District  @relation(fields: [districtId], references: [id])
   properties Property[]
@@ -96,20 +103,18 @@ model Village {
 // ============ PROPERTY ============
 model Property {
   id              String   @id @default(cuid())
-  code            String   @unique // auto-generated: PRP-YYYYMMDD-XXX
+  code            String   @unique
   title           String
   slug            String   @unique
-  description     String   // long description HTML
+  description     String
   propertyTypeId  String
-  status          String   @default("draft") // dijual, disewa, terjual, tersewa, draft
+  status          String   @default("draft")
   isFeatured      Boolean  @default(false)
   isNego          Boolean  @default(false)
   isNew           Boolean  @default(false)
   isPublished     Boolean  @default(false)
   price           BigInt   @default(0)
-  priceDisplay    String   // formatted price string
-
-  // Location
+  priceDisplay    String
   provinceId      String?
   cityId          String?
   districtId      String?
@@ -117,37 +122,27 @@ model Property {
   address         String?
   latitude        Float?
   longitude       Float?
-
-  // Specifications
-  landArea        Int      @default(0)   // luas tanah m2
-  buildingArea    Int      @default(0)   // luas bangunan m2
+  landArea        Int      @default(0)
+  buildingArea    Int      @default(0)
   bedrooms        Int      @default(0)
   bathrooms       Int      @default(0)
   garages         Int      @default(0)
   floors          Int      @default(0)
-  electricity     String?  // daya listrik
-  waterSource     String?  // sumber air
-  certificate     String?  // SHM, SHGB, AJB, Girik
-  buildingCond    String?  // baru, second, renovasi
-  orientation     String?  // utara, selatan, timur, barat
-  facilities      String?  // JSON array of facilities
-
-  // Media
+  electricity     String?
+  waterSource     String?
+  certificate     String?
+  buildingCond    String?
+  orientation     String?
+  facilities      String?
   mainImage       String?
   videoUrl        String?
   virtualTourUrl  String?
-
-  // SEO
   metaTitle       String?
   metaDescription String?
   metaKeywords    String?
-
-  // Agent
   agentId         String?
-
-  // Timestamps
   publishedAt     DateTime?
-  deletedAt       DateTime? // soft delete
+  deletedAt       DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -191,31 +186,21 @@ model Lead {
   whatsapp        String
   email           String?
   phone           String?
-
-  // Property interest
   propertyId      String?
-  propertyName    String?  // denormalized for quick access
+  propertyName    String?
   locationInterest String?
   budget          String?
   propertyTypeInterest String?
-
-  // Lead details
-  needType        String   @default("beli") // beli, sewa, investasi, survei, tanya_harga
-  source          String   @default("website") // website, google_ads, facebook_ads, instagram, whatsapp, artikel, referral
-  status          String   @default("baru") // baru, dihubungi, prospek, survei, negosiasi, closing, gagal, spam
+  needType        String   @default("beli")
+  source          String   @default("website")
+  status          String   @default("baru")
   notes           String?
-  dpAmount        String?  // besaran DP dalam Rupiah
-  promo           String?  // kode promo atau keterangan promo
-
-  // Agent assignment
+  dpAmount        String?
+  promo           String?
   agentId         String?
-
-  // Follow-up
   nextFollowUp    DateTime?
-  followUpNotes   String?  // JSON array of follow-up entries
-
-  // Admin
-  deletedAt       DateTime? // soft delete
+  followUpNotes   String?
+  deletedAt       DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -233,28 +218,20 @@ model Article {
   id            String   @id @default(cuid())
   title         String
   slug          String   @unique
-  content       String   // HTML content
+  content       String
   excerpt       String?
   categoryId    String?
-  tags          String?  // JSON array of tags
+  tags          String?
   featuredImage String?
   isPublished   Boolean  @default(false)
   publishedAt   DateTime?
   scheduledAt   DateTime?
-
-  // SEO
   metaTitle       String?
   metaDescription String?
   metaKeywords    String?
   canonicalUrl    String?
-
-  // Author
   authorId      String?
-
-  // Stats
   viewCount     Int      @default(0)
-
-  // Soft delete
   deletedAt     DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -280,17 +257,17 @@ model ArticleCategory {
   articles Article[]
 }
 
-// ============ AGENT (separate from User for frontend display) ============
+// ============ AGENT PROFILE ============
 model AgentProfile {
   id        String   @id @default(cuid())
   userId    String   @unique
   name      String
-  title     String?  // jabatan
+  title     String?
   photo     String?
   whatsapp  String
   email     String?
   bio       String?
-  areaSpec  String?  // area spesialisasi
+  areaSpec  String?
   isActive  Boolean  @default(true)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
@@ -301,12 +278,12 @@ model AgentProfile {
   @@index([isActive])
 }
 
-// ============ WEBSITE SETTINGS (key-value) ============
+// ============ WEBSITE SETTINGS ============
 model WebsiteSetting {
   id    String @id @default(cuid())
   key   String @unique
   value String
-  group String @default("general") // general, social, seo, analytics, contact
+  group String @default("general")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -333,10 +310,10 @@ model Media {
 model ActivityLog {
   id        String   @id @default(cuid())
   userId    String
-  action    String   // create, update, delete, login, logout, etc.
-  entity    String?  // Property, Lead, Article, etc.
+  action    String
+  entity    String?
   entityId  String?
-  details   String?  // JSON
+  details   String?
   ipAddress String?
   createdAt DateTime @default(now())
 
