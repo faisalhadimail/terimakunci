@@ -16,9 +16,7 @@ import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage, FormDes
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { Loader2, Save, ArrowLeft, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import { fetchWithAuth } from '@/lib/api';
 
@@ -286,26 +284,27 @@ export default function AdminPropertyForm() {
               <FormField name="propertyTypeId" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Jenis Properti</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Pilih jenis" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {propertyTypes.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    options={propertyTypes.map((t) => ({ value: t.id, label: t.name }))}
+                    value={field.value || ''}
+                    onValueChange={field.onChange}
+                    placeholder="Ketik atau pilih jenis properti..."
+                    searchPlaceholder="Cari jenis properti..."
+                    emptyMessage="Jenis properti tidak ditemukan"
+                  />
                   <FormMessage />
                 </FormItem>
               )} />
               <FormField name="status" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Status</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger className="w-full"><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="dijual">Dijual</SelectItem>
-                      <SelectItem value="disewa">Disewa</SelectItem>
-                      <SelectItem value="draft">Draft</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    options={[{ value: 'dijual', label: 'Dijual' }, { value: 'disewa', label: 'Disewa' }, { value: 'draft', label: 'Draft' }]}
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    placeholder="Ketik atau pilih status..."
+                    searchPlaceholder="Cari status..."
+                  />
                   <FormMessage />
                 </FormItem>
               )} />
@@ -346,24 +345,29 @@ export default function AdminPropertyForm() {
               <FormField name="cityId" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Kabupaten/Kota</FormLabel>
-                  <Select value={field.value || ''} onValueChange={(v) => { field.onChange(v); setValue('districtId', ''); }}>
-                    <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Pilih kota" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {cities.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    options={cities.map((c) => ({ value: c.id, label: c.name }))}
+                    value={field.value || ''}
+                    onValueChange={(v) => { field.onChange(v); setValue('districtId', ''); }}
+                    placeholder="Ketik nama kota..."
+                    searchPlaceholder="Cari kabupaten/kota..."
+                    emptyMessage="Kota tidak ditemukan"
+                  />
                   <FormMessage />
                 </FormItem>
               )} />
               <FormField name="districtId" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Kecamatan</FormLabel>
-                  <Select value={field.value || ''} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Pilih kecamatan" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {districts.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    options={districts.map((d) => ({ value: d.id, label: d.name }))}
+                    value={field.value || ''}
+                    onValueChange={field.onChange}
+                    placeholder={watchedCityId ? 'Ketik nama kecamatan...' : 'Pilih kota dulu'}
+                    searchPlaceholder="Cari kecamatan..."
+                    emptyMessage="Kecamatan tidak ditemukan"
+                    disabled={!watchedCityId}
+                  />
                   <FormMessage />
                 </FormItem>
               )} />
@@ -463,42 +467,37 @@ export default function AdminPropertyForm() {
               <FormField name="certificate" render={({ field }) => (
                 <FormItem>
                   <FormLabel className={visibleSpecs.includes('certificate') ? '' : 'text-muted-foreground'}>Sertifikat</FormLabel>
-                  <Select value={field.value || ''} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Pilih sertifikat" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="SHM">SHM</SelectItem>
-                      <SelectItem value="SHGB">SHGB</SelectItem>
-                      <SelectItem value="AJB">AJB</SelectItem>
-                      <SelectItem value="Lainnya">Lainnya</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    options={[{ value: 'SHM', label: 'SHM - Sertifikat Hak Milik' }, { value: 'SHGB', label: 'SHGB - Sertifikat Hak Guna Bangunan' }, { value: 'AJB', label: 'AJB - Akta Jual Beli' }, { value: 'Girik', label: 'Girik' }, { value: 'Lainnya', label: 'Lainnya' }]}
+                    value={field.value || ''}
+                    onValueChange={field.onChange}
+                    placeholder="Ketik atau pilih sertifikat..."
+                    searchPlaceholder="Cari sertifikat..."
+                  />
                 </FormItem>
               )} />
               <FormField name="buildingCond" render={({ field }) => (
                 <FormItem>
                   <FormLabel className={visibleSpecs.includes('buildingCond') ? '' : 'text-muted-foreground'}>Kondisi Bangunan</FormLabel>
-                  <Select value={field.value || ''} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Pilih kondisi" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="baru">Baru</SelectItem>
-                      <SelectItem value="bagus">Bagus</SelectItem>
-                      <SelectItem value="sedang">Sedang</SelectItem>
-                      <SelectItem value="renovasi">Perlu Renovasi</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    options={[{ value: 'baru', label: 'Baru' }, { value: 'bagus', label: 'Bagus' }, { value: 'sedang', label: 'Sedang' }, { value: 'renovasi', label: 'Perlu Renovasi' }]}
+                    value={field.value || ''}
+                    onValueChange={field.onChange}
+                    placeholder="Ketik atau pilih kondisi..."
+                    searchPlaceholder="Cari kondisi bangunan..."
+                  />
                 </FormItem>
               )} />
               <FormField name="orientation" render={({ field }) => (
                 <FormItem>
                   <FormLabel className={visibleSpecs.includes('orientation') ? '' : 'text-muted-foreground'}>Arah Hadap</FormLabel>
-                  <Select value={field.value || ''} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Pilih arah" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {['Utara', 'Selatan', 'Timur', 'Barat', 'Barat Laut', 'Tenggara'].map((d) => (
-                        <SelectItem key={d} value={d.toLowerCase()}>{d}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    options={[{ value: 'utara', label: 'Utara' }, { value: 'selatan', label: 'Selatan' }, { value: 'timur', label: 'Timur' }, { value: 'barat', label: 'Barat' }, { value: 'barat_laut', label: 'Barat Laut' }, { value: 'tenggara', label: 'Tenggara' }, { value: 'barat_daya', label: 'Barat Daya' }, { value: 'timur_laut', label: 'Timur Laut' }]}
+                    value={field.value || ''}
+                    onValueChange={field.onChange}
+                    placeholder="Ketik atau pilih arah..."
+                    searchPlaceholder="Cari arah hadap..."
+                  />
                 </FormItem>
               )} />
               <FormField name="facilities" render={({ field }) => (
@@ -591,12 +590,14 @@ export default function AdminPropertyForm() {
               <FormField name="agentId" render={({ field }) => (
                 <FormItem className="max-w-md">
                   <FormLabel>Agen Penanggung Jawab</FormLabel>
-                  <Select value={field.value || ''} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Pilih agen" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    options={agents.map((a) => ({ value: a.id, label: a.name }))}
+                    value={field.value || ''}
+                    onValueChange={field.onChange}
+                    placeholder="Ketik nama agen..."
+                    searchPlaceholder="Cari agen..."
+                    emptyMessage="Agen tidak ditemukan"
+                  />
                   <FormMessage />
                 </FormItem>
               )} />

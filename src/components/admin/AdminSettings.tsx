@@ -32,6 +32,39 @@ interface SitemapStats {
 
 type SqlTab = 'ddl' | 'seed' | 'schema' | 'env';
 
+// ============ Extracted components (outside parent to prevent remount on every keystroke) ============
+
+function SettingField({
+  settingKey, label, type = 'text', placeholder = '', value, onChange,
+}: {
+  settingKey: string; label: string; type?: string; placeholder?: string;
+  value: string; onChange: (val: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={settingKey} className="text-sm font-medium">{label}</Label>
+      {type === 'textarea' ? (
+        <Textarea id={settingKey} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={3} className="min-h-[80px]" />
+      ) : (
+        <Input id={settingKey} type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="h-10" />
+      )}
+    </div>
+  );
+}
+
+function SaveGroupButton({
+  group, saving, lastSavedGroup, onSave,
+}: {
+  group: string; saving: boolean; lastSavedGroup: string | null; onSave: (group: string) => void;
+}) {
+  return (
+    <Button onClick={() => onSave(group)} disabled={saving} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
+      {saving && lastSavedGroup === group ? <Loader2 className="h-3 w-3 animate-spin" /> : lastSavedGroup === group ? <CheckCircle2 className="h-3 w-3" /> : <Save className="h-3 w-3" />}
+      {lastSavedGroup === group ? 'Tersimpan' : 'Simpan'}
+    </Button>
+  );
+}
+
 export default function AdminSettings() {
   const [settings, setSettings] = useState<WebsiteSetting[]>([]);
   const [loading, setLoading] = useState(true);
@@ -154,6 +187,12 @@ export default function AdminSettings() {
   };
 
   const getValue = (key: string) => editedSettings[key] || '';
+
+  // Helper to bind setting key to value/onChange for SettingField
+  const fieldProps = (key: string) => ({
+    value: getValue(key),
+    onChange: (val: string) => updateValue(key, val),
+  });
 
   const getGroupSettings = (group: string) => settings.filter((s) => s.group === group);
 
@@ -341,24 +380,6 @@ export default function AdminSettings() {
     }
   };
 
-  const SettingField = ({ settingKey, label, type = 'text', placeholder = '' }: { settingKey: string; label: string; type?: string; placeholder?: string }) => (
-    <div className="space-y-2">
-      <Label htmlFor={settingKey} className="text-sm font-medium">{label}</Label>
-      {type === 'textarea' ? (
-        <Textarea id={settingKey} value={getValue(settingKey)} onChange={(e) => updateValue(settingKey, e.target.value)} placeholder={placeholder} rows={3} className="min-h-[80px]" />
-      ) : (
-        <Input id={settingKey} type={type} value={getValue(settingKey)} onChange={(e) => updateValue(settingKey, e.target.value)} placeholder={placeholder} className="h-10" />
-      )}
-    </div>
-  );
-
-  const SaveGroupButton = ({ group }: { group: string }) => (
-    <Button onClick={() => handleSave(group)} disabled={saving} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
-      {saving && lastSavedGroup === group ? <Loader2 className="h-3 w-3 animate-spin" /> : lastSavedGroup === group ? <CheckCircle2 className="h-3 w-3" /> : <Save className="h-3 w-3" />}
-      {lastSavedGroup === group ? 'Tersimpan' : 'Simpan'}
-    </Button>
-  );
-
   if (loading) {
     return (
       <div className="p-6 space-y-4">
@@ -414,15 +435,15 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><Settings className="h-4 w-4 text-emerald-600" /> Pengaturan Umum</CardTitle>
                   <CardDescription>Nama, logo, dan informasi dasar website</CardDescription>
                 </div>
-                <SaveGroupButton group="general" />
+                <SaveGroupButton group="general" saving={saving} lastSavedGroup={lastSavedGroup} onSave={handleSave} />
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="site_name" label="Nama Website" placeholder="PropNusa" />
-              <SettingField settingKey="site_tagline" label="Tagline" placeholder="Jual Beli Properti Terpercaya" />
-              <SettingField settingKey="site_logo" label="Logo URL" placeholder="https://example.com/logo.png" />
-              <SettingField settingKey="site_favicon" label="Favicon URL" placeholder="https://example.com/favicon.ico" />
-              <SettingField settingKey="site_description" label="Deskripsi Website" type="textarea" placeholder="Deskripsi singkat website" />
+              <SettingField settingKey="site_name" label="Nama Website" placeholder="PropNusa" {...fieldProps('site_name')} />
+              <SettingField settingKey="site_tagline" label="Tagline" placeholder="Jual Beli Properti Terpercaya" {...fieldProps('site_tagline')} />
+              <SettingField settingKey="site_logo" label="Logo URL" placeholder="https://example.com/logo.png" {...fieldProps('site_logo')} />
+              <SettingField settingKey="site_favicon" label="Favicon URL" placeholder="https://example.com/favicon.ico" {...fieldProps('site_favicon')} />
+              <SettingField settingKey="site_description" label="Deskripsi Website" type="textarea" placeholder="Deskripsi singkat website" {...fieldProps('site_description')} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -436,16 +457,16 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><Phone className="h-4 w-4 text-emerald-600" /> Kontak</CardTitle>
                   <CardDescription>Informasi kontak yang ditampilkan di website</CardDescription>
                 </div>
-                <SaveGroupButton group="contact" />
+                <SaveGroupButton group="contact" saving={saving} lastSavedGroup={lastSavedGroup} onSave={handleSave} />
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="contact_phone" label="Telepon" placeholder="+62 xxx" />
-              <SettingField settingKey="contact_whatsapp" label="WhatsApp" placeholder="+62 xxx" />
-              <SettingField settingKey="contact_email" label="Email" placeholder="info@propnusa.com" type="email" />
-              <SettingField settingKey="contact_address" label="Alamat" placeholder="Alamat kantor" />
-              <SettingField settingKey="contact_map_embed" label="Google Maps Embed URL" placeholder="https://maps.google.com/..." />
-              <SettingField settingKey="contact_working_hours" label="Jam Operasional" placeholder="Sen-Sab 09:00-17:00" />
+              <SettingField settingKey="contact_phone" label="Telepon" placeholder="+62 xxx" {...fieldProps('contact_phone')} />
+              <SettingField settingKey="contact_whatsapp" label="WhatsApp" placeholder="+62 xxx" {...fieldProps('contact_whatsapp')} />
+              <SettingField settingKey="contact_email" label="Email" placeholder="info@propnusa.com" type="email" {...fieldProps('contact_email')} />
+              <SettingField settingKey="contact_address" label="Alamat" placeholder="Alamat kantor" {...fieldProps('contact_address')} />
+              <SettingField settingKey="contact_map_embed" label="Google Maps Embed URL" placeholder="https://maps.google.com/..." {...fieldProps('contact_map_embed')} />
+              <SettingField settingKey="contact_working_hours" label="Jam Operasional" placeholder="Sen-Sab 09:00-17:00" {...fieldProps('contact_working_hours')} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -459,15 +480,15 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><Share2 className="h-4 w-4 text-emerald-600" /> Sosial Media</CardTitle>
                   <CardDescription>Link sosial media website</CardDescription>
                 </div>
-                <SaveGroupButton group="social" />
+                <SaveGroupButton group="social" saving={saving} lastSavedGroup={lastSavedGroup} onSave={handleSave} />
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="social_facebook" label="Facebook URL" placeholder="https://facebook.com/..." />
-              <SettingField settingKey="social_instagram" label="Instagram URL" placeholder="https://instagram.com/..." />
-              <SettingField settingKey="social_youtube" label="YouTube URL" placeholder="https://youtube.com/..." />
-              <SettingField settingKey="social_tiktok" label="TikTok URL" placeholder="https://tiktok.com/..." />
-              <SettingField settingKey="social_linkedin" label="LinkedIn URL" placeholder="https://linkedin.com/..." />
+              <SettingField settingKey="social_facebook" label="Facebook URL" placeholder="https://facebook.com/..." {...fieldProps('social_facebook')} />
+              <SettingField settingKey="social_instagram" label="Instagram URL" placeholder="https://instagram.com/..." {...fieldProps('social_instagram')} />
+              <SettingField settingKey="social_youtube" label="YouTube URL" placeholder="https://youtube.com/..." {...fieldProps('social_youtube')} />
+              <SettingField settingKey="social_tiktok" label="TikTok URL" placeholder="https://tiktok.com/..." {...fieldProps('social_tiktok')} />
+              <SettingField settingKey="social_linkedin" label="LinkedIn URL" placeholder="https://linkedin.com/..." {...fieldProps('social_linkedin')} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -482,16 +503,16 @@ export default function AdminSettings() {
                     <CardTitle className="text-base flex items-center gap-2"><Search className="h-4 w-4 text-emerald-600" /> SEO Meta</CardTitle>
                     <CardDescription>Pengaturan SEO global website</CardDescription>
                   </div>
-                  <SaveGroupButton group="seo" />
+                  <SaveGroupButton group="seo" saving={saving} lastSavedGroup={lastSavedGroup} onSave={handleSave} />
                 </div>
               </CardHeader>
               <CardContent className="grid gap-5 sm:grid-cols-2">
-                <SettingField settingKey="seo_meta_title" label="Default Meta Title" placeholder="PropNusa - Jual Beli Properti" />
-                <SettingField settingKey="seo_canonical_url" label="Canonical URL" placeholder="https://www.propnusa.com" />
-                <SettingField settingKey="seo_meta_description" label="Default Meta Description" type="textarea" placeholder="Deskripsi default untuk SEO" />
-                <SettingField settingKey="seo_meta_keywords" label="Default Meta Keywords" placeholder="properti, jual, beli, rumah" />
-                <SettingField settingKey="seo_robots" label="Robots Meta" placeholder="index, follow" />
-                <SettingField settingKey="seo_og_image" label="Default OG Image URL" placeholder="https://example.com/og.jpg" />
+                <SettingField settingKey="seo_meta_title" label="Default Meta Title" placeholder="PropNusa - Jual Beli Properti" {...fieldProps('seo_meta_title')} />
+                <SettingField settingKey="seo_canonical_url" label="Canonical URL" placeholder="https://www.propnusa.com" {...fieldProps('seo_canonical_url')} />
+                <SettingField settingKey="seo_meta_description" label="Default Meta Description" type="textarea" placeholder="Deskripsi default untuk SEO" {...fieldProps('seo_meta_description')} />
+                <SettingField settingKey="seo_meta_keywords" label="Default Meta Keywords" placeholder="properti, jual, beli, rumah" {...fieldProps('seo_meta_keywords')} />
+                <SettingField settingKey="seo_robots" label="Robots Meta" placeholder="index, follow" {...fieldProps('seo_robots')} />
+                <SettingField settingKey="seo_og_image" label="Default OG Image URL" placeholder="https://example.com/og.jpg" {...fieldProps('seo_og_image')} />
               </CardContent>
             </Card>
 
@@ -672,15 +693,15 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><BarChart3 className="h-4 w-4 text-emerald-600" /> Analytics</CardTitle>
                   <CardDescription>Kode tracking dan analytics</CardDescription>
                 </div>
-                <SaveGroupButton group="analytics" />
+                <SaveGroupButton group="analytics" saving={saving} lastSavedGroup={lastSavedGroup} onSave={handleSave} />
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="analytics_ga_id" label="Google Analytics ID" placeholder="G-XXXXXXXXXX" />
-              <SettingField settingKey="analytics_gtm_id" label="Google Tag Manager ID" placeholder="GTM-XXXXXXX" />
-              <SettingField settingKey="analytics_fb_pixel" label="Facebook Pixel ID" placeholder="XXXXXXXXXXXXXXX" />
-              <SettingField settingKey="analytics_head_scripts" label="Custom Head Scripts" type="textarea" placeholder="Kode JavaScript yang di-inject di head" />
-              <SettingField settingKey="analytics_body_scripts" label="Custom Body Scripts" type="textarea" placeholder="Kode JavaScript yang di-inject di body" />
+              <SettingField settingKey="analytics_ga_id" label="Google Analytics ID" placeholder="G-XXXXXXXXXX" {...fieldProps('analytics_ga_id')} />
+              <SettingField settingKey="analytics_gtm_id" label="Google Tag Manager ID" placeholder="GTM-XXXXXXX" {...fieldProps('analytics_gtm_id')} />
+              <SettingField settingKey="analytics_fb_pixel" label="Facebook Pixel ID" placeholder="XXXXXXXXXXXXXXX" {...fieldProps('analytics_fb_pixel')} />
+              <SettingField settingKey="analytics_head_scripts" label="Custom Head Scripts" type="textarea" placeholder="Kode JavaScript yang di-inject di head" {...fieldProps('analytics_head_scripts')} />
+              <SettingField settingKey="analytics_body_scripts" label="Custom Body Scripts" type="textarea" placeholder="Kode JavaScript yang di-inject di body" {...fieldProps('analytics_body_scripts')} />
             </CardContent>
           </Card>
         </TabsContent>
