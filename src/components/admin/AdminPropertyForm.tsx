@@ -17,7 +17,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Combobox } from '@/components/ui/combobox';
-import { Loader2, Save, ArrowLeft, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Save, ArrowLeft, Plus, Trash2, Eye, EyeOff, Sparkles } from 'lucide-react';
 import { fetchWithAuth } from '@/lib/api';
 
 const propertySchema = z.object({
@@ -230,6 +230,105 @@ export default function AdminPropertyForm() {
 
   const removeImage = (index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Helper: format harga ke rupiah singkat
+  const formatPriceShort = (price: number): string => {
+    if (!price || price === 0) return '';
+    if (price >= 1_000_000_000) return `${(price / 1_000_000_000).toFixed(price % 1_000_000_000 === 0 ? 0 : 1)} Miliar`;
+    if (price >= 1_000_000) return `${(price / 1_000_000).toFixed(price % 1_000_000 === 0 ? 0 : 1)} Juta`;
+    if (price >= 1_000) return `${(price / 1_000).toFixed(0)} Ribu`;
+    return price.toLocaleString('id-ID');
+  };
+
+  // Generate SEO meta tags automatically from property data
+  const generateSEO = () => {
+    const title = watch('title');
+    const propertyTypeId = watch('propertyTypeId');
+    const status = watch('status');
+    const price = watch('price');
+    const cityId = watch('cityId');
+    const districtId = watch('districtId');
+    const landArea = watch('landArea');
+    const buildingArea = watch('buildingArea');
+    const bedrooms = watch('bedrooms');
+    const bathrooms = watch('bathrooms');
+    const certificate = watch('certificate');
+    const address = watch('address');
+
+    // Lookup names
+    const typeName = propertyTypes.find((t) => t.id === propertyTypeId)?.name || 'Properti';
+    const cityName = cities.find((c) => c.id === cityId)?.name || '';
+    const districtName = districts.find((d) => d.id === districtId)?.name || '';
+    const statusLabel = status === 'dijual' ? 'Dijual' : status === 'disewa' ? 'Disewa' : '';
+
+    // Location string
+    const location = [cityName, districtName].filter(Boolean).join(', ');
+    const locationFull = location ? ` di ${location}` : '';
+
+    // === META TITLE (max 70 chars) ===
+    // Pattern: "{TypeName} {Title} {StatusLabel} {Location}" 
+    let metaTitle = '';
+    if (title && typeName) {
+      metaTitle = `${typeName} ${title}`;
+      if (statusLabel) metaTitle += ` ${statusLabel}`;
+      if (location) metaTitle += locationFull;
+    }
+    // Trim to 70 chars
+    if (metaTitle.length > 70) {
+      metaTitle = metaTitle.substring(0, 67) + '...';
+    }
+    if (!metaTitle) metaTitle = title || 'Properti';
+
+    // === META DESCRIPTION (max 160 chars) ===
+    // Pattern: "{TypeName} {title} {statusLabel}{location}. {Specs}. Harga {price}. {Sertifikat}"
+    const specParts: string[] = [];
+    if (landArea > 0) specParts.push(`LT ${landArea} m²`);
+    if (buildingArea > 0) specParts.push(`LB ${buildingArea} m²`);
+    if (bedrooms > 0) specParts.push(`${bedrooms} KT`);
+    if (bathrooms > 0) specParts.push(`${bathrooms} KM`);
+    const specsStr = specParts.length > 0 ? specParts.join(', ') : '';
+
+    let metaDesc = '';
+    if (title && typeName) {
+      metaDesc = `${typeName} ${title} ${statusLabel ? statusLabel.toLowerCase() : ''}${locationFull}.`;
+      if (specsStr) metaDesc += ` Spesifikasi: ${specsStr}.`;
+      if (price > 0) metaDesc += ` Harga ${formatPriceShort(price)} Rupiah.`;
+      if (certificate) metaDesc += ` Sertifikat ${certificate}.`;
+      if (!price && !specsStr) metaDesc += ` Temukan properti impian Anda di PropNusa.`;
+    }
+    // Trim to 160 chars
+    if (metaDesc.length > 160) {
+      metaDesc = metaDesc.substring(0, 157) + '...';
+    }
+    if (!metaDesc) metaDesc = `${title || 'Properti'} - Lihat detail lengkap di PropNusa.`;
+
+    // === META KEYWORDS (max 200 chars) ===
+    const keywordsArr: string[] = [];
+    if (title) {
+      // Extract meaningful words from title (split and filter short words)
+      const words = title.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w) => w.length > 2);
+      words.forEach((w) => { if (!keywordsArr.includes(w)) keywordsArr.push(w); });
+    }
+    if (typeName && !keywordsArr.includes(typeName.toLowerCase())) keywordsArr.push(typeName.toLowerCase());
+    if (statusLabel) keywordsArr.push(statusLabel.toLowerCase());
+    if (cityName) keywordsArr.push(cityName.toLowerCase());
+    if (districtName && !keywordsArr.includes(districtName.toLowerCase())) keywordsArr.push(districtName.toLowerCase());
+    if (certificate && !keywordsArr.includes(certificate.toLowerCase())) keywordsArr.push(certificate.toLowerCase());
+    // Add generic keywords
+    keywordsArr.push('properti', 'propnusa');
+    if (address) {
+      const addrWords = address.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w) => w.length > 3);
+      addrWords.forEach((w) => { if (!keywordsArr.includes(w) && keywordsArr.length < 15) keywordsArr.push(w); });
+    }
+
+    const metaKeywords = keywordsArr.join(', ');
+    const metaKeywordsTrimmed = metaKeywords.length > 200 ? metaKeywords.substring(0, 197) + '...' : metaKeywords;
+
+    // Set all three fields
+    setValue('metaTitle', metaTitle);
+    setValue('metaDescription', metaDesc);
+    setValue('metaKeywords', metaKeywordsTrimmed);
   };
 
   if (loading && isEdit) {
@@ -606,26 +705,50 @@ export default function AdminPropertyForm() {
 
           {/* SEO */}
           <Card>
-            <CardHeader><CardTitle className="text-base">SEO</CardTitle></CardHeader>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">SEO</CardTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs h-7 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                  onClick={generateSEO}
+                >
+                  <Sparkles className="h-3 w-3" />
+                  Generate Auto
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Isi otomatis meta SEO berdasarkan data properti. Pastikan Judul, Jenis Properti, dan Kota sudah diisi.</p>
+            </CardHeader>
             <CardContent className="grid gap-4">
               <FormField name="metaTitle" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Meta Title</FormLabel>
-                  <FormControl><Input {...field} placeholder="Meta title untuk SEO" /></FormControl>
+                  <div className="flex items-center justify-between">
+                    <FormLabel>Meta Title</FormLabel>
+                    <span className="text-xs text-muted-foreground">{(field.value || '').length}/70</span>
+                  </div>
+                  <FormControl><Input {...field} placeholder="Meta title untuk SEO" maxLength={70} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
               <FormField name="metaDescription" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Meta Description</FormLabel>
-                  <FormControl><Textarea {...field} placeholder="Meta description untuk SEO" rows={2} /></FormControl>
+                  <div className="flex items-center justify-between">
+                    <FormLabel>Meta Description</FormLabel>
+                    <span className="text-xs text-muted-foreground">{(field.value || '').length}/160</span>
+                  </div>
+                  <FormControl><Textarea {...field} placeholder="Meta description untuk SEO" rows={2} maxLength={160} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
               <FormField name="metaKeywords" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Meta Keywords</FormLabel>
-                  <FormControl><Input {...field} placeholder="keyword1, keyword2, keyword3" /></FormControl>
+                  <div className="flex items-center justify-between">
+                    <FormLabel>Meta Keywords</FormLabel>
+                    <span className="text-xs text-muted-foreground">{(field.value || '').length}/200</span>
+                  </div>
+                  <FormControl><Input {...field} placeholder="keyword1, keyword2, keyword3" maxLength={200} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
