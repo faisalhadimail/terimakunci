@@ -2,10 +2,6 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { handleCors, json, requireAuth, tryCatch } from '@/lib/api-helpers'
 
-// Simple in-memory cache for dashboard (refreshes every 30s)
-let dashCache: { data: unknown; time: number } | null = null
-const DASH_CACHE_TTL = 30_000
-
 // ============ GET - Dashboard statistics ============
 export async function GET(request: NextRequest) {
   const corsResp = handleCors(request)
@@ -14,23 +10,12 @@ export async function GET(request: NextRequest) {
   const authUser = requireAuth(request)
   if (authUser instanceof Response) return authUser
 
-  // Return cached result if fresh
-  const now = Date.now()
-  if (dashCache && now - dashCache.time < DASH_CACHE_TTL) {
-    return json(dashCache.data)
-  }
-
   const result = await tryCatch(async () => {
-    const nowDate = new Date()
-    const startOfDay = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate())
-    const startOfMonth = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1)
+    const now = new Date()
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
-    // Six months ago (first day)
-    const sixMonthsAgo = new Date(nowDate)
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5)
-    sixMonthsAgo.setDate(1)
-
-    // === All queries in parallel ===
+    // Property counts
     const [
       totalProperties,
       activeProperties,
@@ -41,98 +26,170 @@ export async function GET(request: NextRequest) {
       newLeadsToday,
       newLeadsThisMonth,
       publishedArticles,
-      leadsByStatusRaw,
-      leadsBySourceRaw,
-      topViewedProperties,
-      topViewedArticles,
-      leadsPerMonthRaw,
-      listingsPerMonthRaw,
     ] = await Promise.all([
-      // --- Counts ---
       db.property.count({ where: { deletedAt: null } }),
       db.property.count({
-        where: { deletedAt: null, isPublished: true, status: { in: ['dijual', 'disewa'] } },
+        where: {
+          deletedAt: null,
+          isPublished: true,
+          status: { in: ['dijual', 'disewa'] },
+        },
       }),
-      db.property.count({ where: { deletedAt: null, status: 'draft' } }),
-      db.property.count({ where: { deletedAt: null, status: 'terjual' } }),
-      db.property.count({ where: { deletedAt: null, status: 'tersewa' } }),
+      db.property.count({
+        where: { deletedAt: null, status: 'draft' },
+      }),
+      db.property.count({
+        where: { deletedAt: null, status: 'terjual' },
+      }),
+      db.property.count({
+        where: { deletedAt: null, status: 'tersewa' },
+      }),
       db.lead.count({ where: { deletedAt: null } }),
-      db.lead.count({ where: { deletedAt: null, createdAt: { gte: startOfDay } } }),
-      db.lead.count({ where: { deletedAt: null, createdAt: { gte: startOfMonth } } }),
-      db.article.count({ where: { deletedAt: null, isPublished: true } }),
-
-      // --- Group by ---
-      db.lead.groupBy({ by: ['status'], where: { deletedAt: null }, _count: { status: true } }),
-      db.lead.groupBy({ by: ['source'], where: { deletedAt: null }, _count: { source: true } }),
-
-      // --- Top items ---
-      db.property.findMany({
-        where: { deletedAt: null, isPublished: true },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        select: {
-          id: true, title: true, slug: true, price: true, priceDisplay: true,
-          status: true, mainImage: true,
-          city: { select: { name: true } },
-          propertyType: { select: { name: true } },
-          _count: { select: { leads: true } },
+      db.lead.count({
+        where: {
+          deletedAt: null,
+          createdAt: { gte: startOfDay },
         },
       }),
-      db.article.findMany({
-        where: { deletedAt: null, isPublished: true },
-        orderBy: { viewCount: 'desc' },
-        take: 5,
-        select: {
-          id: true, title: true, slug: true, viewCount: true, featuredImage: true, createdAt: true,
-          category: { select: { name: true } },
-          author: { select: { name: true } },
+      db.lead.count({
+        where: {
+          deletedAt: null,
+          createdAt: { gte: startOfMonth },
         },
       }),
-
-      // --- Monthly aggregations via raw SQL (much faster than findMany + JS grouping) ---
-      db.$queryRaw<{ month: string; count: number }[]>`
-        SELECT strftime('%Y-%m', "createdAt") AS month, COUNT(*) AS count
-        FROM Lead
-        WHERE "deletedAt" IS NULL AND "createdAt" >= ${sixMonthsAgo}
-        GROUP BY strftime('%Y-%m', "createdAt")
-        ORDER BY month
-      `,
-      db.$queryRaw<{ month: string; count: number }[]>`
-        SELECT strftime('%Y-%m', "createdAt") AS month, COUNT(*) AS count
-        FROM Property
-        WHERE "deletedAt" IS NULL AND "createdAt" >= ${sixMonthsAgo}
-        GROUP BY strftime('%Y-%m', "createdAt")
-        ORDER BY month
-      `,
+      db.article.count({
+        where: {
+          deletedAt: null,
+          isPublished: true,
+        },
+      }),
     ])
 
-    // Map groupBy results
+    // Leads grouped by status
+    const leadsByStatusRaw = await db.lead.groupBy({
+      by: ['status'],
+      where: { deletedAt: null },
+      _count: { status: true },
+    })
     const leadsByStatus = leadsByStatusRaw.map((item) => ({
       status: item.status,
       count: item._count.status,
     }))
+
+    // Leads grouped by source
+    const leadsBySourceRaw = await db.lead.groupBy({
+      by: ['source'],
+      where: { deletedAt: null },
+      _count: { source: true },
+    })
     const leadsBySource = leadsBySourceRaw.map((item) => ({
       source: item.source,
       count: item._count.source,
     }))
 
-    // Fill missing months from raw SQL results
-    const monthKeys: string[] = []
-    const mIter = new Date(sixMonthsAgo)
-    while (mIter <= nowDate) {
-      monthKeys.push(mIter.toISOString().slice(0, 7))
-      mIter.setMonth(mIter.getMonth() + 1)
+    // Top viewed properties
+    const topViewedProperties = await db.property.findMany({
+      where: {
+        deletedAt: null,
+        isPublished: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        price: true,
+        priceDisplay: true,
+        status: true,
+        mainImage: true,
+        city: { select: { name: true } },
+        propertyType: { select: { name: true } },
+        _count: { select: { leads: true } },
+      },
+    })
+
+    // Top viewed articles
+    const topViewedArticles = await db.article.findMany({
+      where: {
+        deletedAt: null,
+        isPublished: true,
+      },
+      orderBy: { viewCount: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        viewCount: true,
+        featuredImage: true,
+        createdAt: true,
+        category: { select: { name: true } },
+        author: { select: { name: true } },
+      },
+    })
+
+    // Leads per month (last 6 months)
+    const sixMonthsAgo = new Date(now)
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5)
+    sixMonthsAgo.setDate(1)
+
+    const leadsPerMonthRaw = await db.lead.findMany({
+      where: {
+        deletedAt: null,
+        createdAt: { gte: sixMonthsAgo },
+      },
+      select: {
+        createdAt: true,
+      },
+    })
+
+    const leadsPerMonthMap: Record<string, number> = {}
+    for (const lead of leadsPerMonthRaw) {
+      const month = lead.createdAt.toISOString().slice(0, 7) // YYYY-MM
+      leadsPerMonthMap[month] = (leadsPerMonthMap[month] || 0) + 1
     }
 
-    const rawToMonthly = (raw: { month: string; count: number }[]) => {
-      const map = new Map(raw.map((r) => [r.month, r.count]))
-      return monthKeys.map((month) => ({ month, count: Number(map.get(month) || 0) }))
+    const leadsPerMonth = []
+    const monthIter = new Date(sixMonthsAgo)
+    while (monthIter <= now) {
+      const key = monthIter.toISOString().slice(0, 7)
+      leadsPerMonth.push({
+        month: key,
+        count: leadsPerMonthMap[key] || 0,
+      })
+      monthIter.setMonth(monthIter.getMonth() + 1)
     }
 
-    const leadsPerMonth = rawToMonthly(leadsPerMonthRaw)
-    const listingsPerMonth = rawToMonthly(listingsPerMonthRaw)
+    // Listings per month (last 6 months)
+    const listingsPerMonthRaw = await db.property.findMany({
+      where: {
+        deletedAt: null,
+        createdAt: { gte: sixMonthsAgo },
+      },
+      select: {
+        createdAt: true,
+      },
+    })
 
-    const data = {
+    const listingsPerMonthMap: Record<string, number> = {}
+    for (const prop of listingsPerMonthRaw) {
+      const month = prop.createdAt.toISOString().slice(0, 7)
+      listingsPerMonthMap[month] = (listingsPerMonthMap[month] || 0) + 1
+    }
+
+    const listingsPerMonth = []
+    const listingMonthIter = new Date(sixMonthsAgo)
+    while (listingMonthIter <= now) {
+      const key = listingMonthIter.toISOString().slice(0, 7)
+      listingsPerMonth.push({
+        month: key,
+        count: listingsPerMonthMap[key] || 0,
+      })
+      listingMonthIter.setMonth(listingMonthIter.getMonth() + 1)
+    }
+
+    return {
       totalProperties,
       activeProperties,
       draftProperties,
@@ -149,11 +206,6 @@ export async function GET(request: NextRequest) {
       leadsPerMonth,
       listingsPerMonth,
     }
-
-    // Cache the result
-    dashCache = { data, time: Date.now() }
-
-    return data
   })
 
   if (result instanceof Response) return result
