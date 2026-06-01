@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // ============ USER & AUTH ============
@@ -16,7 +15,7 @@ model User {
   password      String
   phone         String?
   avatar        String?
-  role          String   @default("admin") // super_admin, admin, editor, agent, viewer, seo_manager
+  role          String   @default("admin")
   isActive      Boolean  @default(true)
   lastLogin     DateTime?
   createdAt     DateTime @default(now())
@@ -25,14 +24,13 @@ model User {
   properties   Property[] @relation("AgentProperties")
   leads        Lead[]
   articles     Article[]
-  activityLogs ActivityLog[]
   agentProfile AgentProfile?
 }
 
 // ============ PROPERTY TYPE ============
 model PropertyType {
   id          String   @id @default(cuid())
-  name        String   @unique // Rumah, Tanah, Ruko, Apartemen, Villa, Gudang, Kantor, Kost, Pabrik, Kavling, Komersial
+  name        String   @unique
   slug        String   @unique
   icon        String?
   description String?
@@ -64,6 +62,9 @@ model City {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  @@index([provinceId])
+  @@index([slug])
+
   province  Province  @relation(fields: [provinceId], references: [id])
   districts District[]
   properties Property[]
@@ -76,6 +77,9 @@ model District {
   cityId    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([cityId])
+  @@index([slug])
 
   city     City     @relation(fields: [cityId], references: [id])
   villages Village[]
@@ -97,20 +101,29 @@ model Village {
 // ============ PROPERTY ============
 model Property {
   id              String   @id @default(cuid())
-  code            String   @unique // auto-generated: PRP-YYYYMMDD-XXX
+  code            String   @unique
   title           String
   slug            String   @unique
-  description     String   // long description HTML
+  description     String
   propertyTypeId  String
-  status          String   @default("draft") // dijual, disewa, terjual, tersewa, draft
+  status          String   @default("draft")
+
+  @@index([propertyTypeId])
+  @@index([status])
+  @@index([cityId])
+  @@index([agentId])
+  @@index([isPublished])
+  @@index([isFeatured])
+  @@index([deletedAt])
+  @@index([createdAt])
+
   isFeatured      Boolean  @default(false)
   isNego          Boolean  @default(false)
   isNew           Boolean  @default(false)
   isPublished     Boolean  @default(false)
   price           BigInt   @default(0)
-  priceDisplay    String   // formatted price string
+  priceDisplay    String
 
-  // Location
   provinceId      String?
   cityId          String?
   districtId      String?
@@ -119,37 +132,32 @@ model Property {
   latitude        Float?
   longitude       Float?
 
-  // Specifications
-  landArea        Int      @default(0)   // luas tanah m2
-  buildingArea    Int      @default(0)   // luas bangunan m2
+  landArea        Int      @default(0)
+  buildingArea    Int      @default(0)
   bedrooms        Int      @default(0)
   bathrooms       Int      @default(0)
   garages         Int      @default(0)
   floors          Int      @default(0)
-  electricity     String?  // daya listrik
-  waterSource     String?  // sumber air
-  certificate     String?  // SHM, SHGB, AJB, Girik
-  buildingCond    String?  // baru, second, renovasi
-  orientation     String?  // utara, selatan, timur, barat
-  facilities      String?  // JSON array of facilities
-  visibleSpecs     String?  // JSON array of spec keys to show on frontend, e.g. ["landArea","bedrooms","certificate"]
+  electricity     String?
+  waterSource     String?
+  certificate     String?
+  buildingCond    String?
+  orientation     String?
+  facilities      String?
+  visibleSpecs     String?
 
-  // Media
   mainImage       String?
   videoUrl        String?
   virtualTourUrl  String?
 
-  // SEO
   metaTitle       String?
   metaDescription String?
   metaKeywords    String?
 
-  // Agent
   agentId         String?
 
-  // Timestamps
   publishedAt     DateTime?
-  deletedAt       DateTime? // soft delete
+  deletedAt       DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -161,15 +169,6 @@ model Property {
   agent         User?      @relation("AgentProperties", fields: [agentId], references: [id])
   images        PropertyImage[]
   leads         Lead[]
-
-  @@index([slug])
-  @@index([status])
-  @@index([propertyTypeId])
-  @@index([cityId])
-  @@index([districtId])
-  @@index([isFeatured])
-  @@index([isPublished])
-  @@index([price])
 }
 
 // ============ PROPERTY IMAGE ============
@@ -181,9 +180,9 @@ model PropertyImage {
   sortOrder  Int      @default(0)
   createdAt  DateTime @default(now())
 
-  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-
   @@index([propertyId])
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 }
 
 // ============ LEAD ============
@@ -194,40 +193,37 @@ model Lead {
   email           String?
   phone           String?
 
-  // Property interest
   propertyId      String?
-  propertyName    String?  // denormalized for quick access
+  propertyName    String?
   locationInterest String?
   budget          String?
   propertyTypeInterest String?
 
-  // Lead details
-  needType        String   @default("beli") // beli, sewa, investasi, survei, tanya_harga
-  source          String   @default("website") // website, google_ads, facebook_ads, instagram, whatsapp, artikel, referral
-  status          String   @default("baru") // baru, dihubungi, prospek, survei, negosiasi, closing, gagal, spam
+  needType        String   @default("beli")
+  source          String   @default("website")
+  status          String   @default("baru")
   notes           String?
-  dpAmount        String?  // besaran DP dalam Rupiah
-  promo           String?  // kode promo atau keterangan promo
+  dpAmount        String?
+  promo           String?
 
-  // Agent assignment
+  @@index([deletedAt])
+  @@index([status])
+  @@index([source])
+  @@index([createdAt])
+  @@index([propertyId])
+  @@index([agentId])
+
   agentId         String?
 
-  // Follow-up
   nextFollowUp    DateTime?
-  followUpNotes   String?  // JSON array of follow-up entries
+  followUpNotes   String?
 
-  // Admin
-  deletedAt       DateTime? // soft delete
+  deletedAt       DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   property Property? @relation(fields: [propertyId], references: [id])
   agent    User?     @relation(fields: [agentId], references: [id])
-
-  @@index([status])
-  @@index([agentId])
-  @@index([source])
-  @@index([createdAt])
 }
 
 // ============ ARTICLE ============
@@ -235,39 +231,35 @@ model Article {
   id            String   @id @default(cuid())
   title         String
   slug          String   @unique
-  content       String   // HTML content
+  content       String
   excerpt       String?
   categoryId    String?
-  tags          String?  // JSON array of tags
+  tags          String?
   featuredImage String?
   isPublished   Boolean  @default(false)
   publishedAt   DateTime?
   scheduledAt   DateTime?
 
-  // SEO
+  @@index([isPublished])
+  @@index([categoryId])
+  @@index([deletedAt])
+  @@index([createdAt])
+
   metaTitle       String?
   metaDescription String?
   metaKeywords    String?
   canonicalUrl    String?
 
-  // Author
   authorId      String?
 
-  // Stats
   viewCount     Int      @default(0)
 
-  // Soft delete
   deletedAt     DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   category ArticleCategory? @relation(fields: [categoryId], references: [id])
   author   User?            @relation(fields: [authorId], references: [id])
-
-  @@index([slug])
-  @@index([categoryId])
-  @@index([isPublished])
-  @@index([createdAt])
 }
 
 // ============ ARTICLE CATEGORY ============
@@ -287,20 +279,21 @@ model AgentProfile {
   id        String   @id @default(cuid())
   userId    String   @unique
   name      String
-  title     String?  // jabatan
+  title     String?
   photo     String?
   whatsapp  String
   email     String?
   bio       String?
-  areaSpec  String?  // area spesialisasi
+  areaSpec  String?
   isActive  Boolean  @default(true)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
-
   @@index([isActive])
+  @@index([sortOrder])
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 // ============ WEBSITE SETTINGS (key-value) ============
@@ -308,7 +301,7 @@ model WebsiteSetting {
   id    String @id @default(cuid())
   key   String @unique
   value String
-  group String @default("general") // general, social, seo, analytics, contact
+  group String @default("general")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -327,24 +320,4 @@ model Media {
   deletedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  @@index([folder])
-}
-
-// ============ ACTIVITY LOG ============
-model ActivityLog {
-  id        String   @id @default(cuid())
-  userId    String
-  action    String   // create, update, delete, login, logout, etc.
-  entity    String?  // Property, Lead, Article, etc.
-  entityId  String?
-  details   String?  // JSON
-  ipAddress String?
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-
-  @@index([userId])
-  @@index([action])
-  @@index([createdAt])
 }
