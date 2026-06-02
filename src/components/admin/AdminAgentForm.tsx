@@ -139,7 +139,7 @@ export default function AdminAgentForm() {
               <FormField name="email" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Email</FormLabel>
-                  <FormControl><Input type="email" {...field} placeholder="agen@propnusa.com" /></FormControl>
+                  <FormControl><Input type="email" {...field} placeholder="agen@terimakunci.com" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />

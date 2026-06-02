@@ -29,8 +29,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { PropertyType, City, District } from '@/lib/types';
 
-const STORAGE_KEY = 'propnusa_search_popup_dismissed';
-const POPUP_EVENT = 'propnusa_popup_dismiss';
+const STORAGE_KEY = 'terimakunci_search_popup_dismissed';
+const POPUP_EVENT = 'terimakunci_popup_dismiss';
 
 // Subscribe to popup dismiss events (custom event for same-tab reactivity)
 function subscribePopup(callback: () => void) {

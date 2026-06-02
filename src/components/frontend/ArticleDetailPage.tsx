@@ -33,7 +33,7 @@ export default function ArticleDetailPage() {
   const [copied, setCopied] = useState(false);
   const { settings } = useDataCache();
 
-  const siteName = settings.find((s) => s.key === 'site_name')?.value || 'PropNusa';
+  const siteName = settings.find((s) => s.key === 'site_name')?.value || 'TerimaKunci';
 
   useEffect(() => {
     if (!slug) return;

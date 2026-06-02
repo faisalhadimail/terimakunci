@@ -18,15 +18,15 @@ export async function GET(request: NextRequest) {
       flat[s.key] = s.value
     }
 
-    const baseUrl = flat.seo_canonical_url?.replace(/\/+$/, '') || 'https://www.propnusa.com'
+    const baseUrl = flat.seo_canonical_url?.replace(/\/+$/, '') || 'https://www.terimakunci.com'
     const robotsMeta = flat.seo_robots || 'index, follow'
 
     // Parse robots meta to determine allow/disallow
     const disallowIndex = robotsMeta.toLowerCase().includes('noindex')
 
     const lines: string[] = []
-    lines.push(`# robots.txt for PropNusa`)
-    lines.push(`# Generated automatically by PropNusa CMS`)
+    lines.push(`# robots.txt for TerimaKunci`)
+    lines.push(`# Generated automatically by TerimaKunci CMS`)
     lines.push(`User-agent: *`)
 
     if (disallowIndex) {

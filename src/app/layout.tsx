@@ -16,26 +16,26 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "PropNusa - Jual Beli Properti Terpercaya",
-    template: "%s | PropNusa",
+    default: "TerimaKunci - Jual Beli Properti Terpercaya",
+    template: "%s | TerimaKunci",
   },
-  description: "Temukan properti impian Anda di PropNusa. Jual beli rumah, tanah, ruko, apartemen, dan properti lainnya dengan harga terbaik.",
-  keywords: ["properti", "jual rumah", "beli rumah", "tanah", "ruko", "apartemen", "kost", "PropNusa", "properti Indonesia", "jual beli properti"],
-  authors: [{ name: "PropNusa" }],
+  description: "Temukan properti impian Anda di TerimaKunci. Jual beli rumah, tanah, ruko, apartemen, dan properti lainnya dengan harga terbaik.",
+  keywords: ["properti", "jual rumah", "beli rumah", "tanah", "ruko", "apartemen", "kost", "TerimaKunci", "properti Indonesia", "jual beli properti"],
+  authors: [{ name: "TerimaKunci" }],
   icons: {
     icon: "/favicon.ico",
   },
   openGraph: {
-    title: "PropNusa - Jual Beli Properti Terpercaya",
+    title: "TerimaKunci - Jual Beli Properti Terpercaya",
     description: "Temukan properti impian Anda. Rumah, tanah, ruko, apartemen, dan properti lainnya dengan harga terbaik.",
-    url: "https://propnusa.com",
-    siteName: "PropNusa",
+    url: "https://terimakunci.com",
+    siteName: "TerimaKunci",
     type: "website",
     locale: "id_ID",
   },
   twitter: {
     card: "summary_large_image",
-    title: "PropNusa - Jual Beli Properti Terpercaya",
+    title: "TerimaKunci - Jual Beli Properti Terpercaya",
     description: "Temukan properti impian Anda. Rumah, tanah, ruko, apartemen, dan properti lainnya dengan harga terbaik.",
   },
   robots: {

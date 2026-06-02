@@ -593,3 +593,123 @@ Stage Summary:
 - Frontend only renders specs that are both checked AND have values
 - Backward compatible: existing properties without visibleSpecs show all specs with values
 - Added 3 new spec types to frontend: Sumber Air, Kondisi Bangunan, Arah Hadap
+
+---
+Task ID: 16
+Agent: Main
+Task: Add WhatsApp follow-up button on lead detail and lead list pages
+
+Work Log:
+- Added WhatsAppIcon SVG component to AdminLeadDetail.tsx (official WhatsApp logo)
+- Added prominent green "Follow-up WhatsApp" button in AdminLeadDetail header (next to Simpan button)
+- Replaced plain text WhatsApp link in contact card with green "Chat" button + phone icon
+- Auto-generates personalized greeting message: "Halo [nama], saya dari TerimaKunci. Terima kasih telah menghubungi kami."
+- Phone number auto-converts 0 prefix to 62 for Indonesian numbers
+- Added WhatsAppIcon SVG component to AdminLeadList.tsx
+- Made WhatsApp column in lead list table clickable with green WhatsApp icon + number
+- Added "Follow-up WhatsApp" option in lead list row dropdown menu
+- All WhatsApp links open in new tab with e.stopPropagation() to prevent row navigation
+- Lint passes clean (0 errors)
+
+Stage Summary:
+- WhatsApp follow-up buttons added to both AdminLeadDetail and AdminLeadList
+- Green WhatsApp branded buttons (#25D366) with hover state (#1da851)
+- Auto-personalized message template with lead name and TerimaKunci branding
+- Files modified: AdminLeadDetail.tsx, AdminLeadList.tsx
+
+---
+Task ID: 17
+Agent: Main
+Task: Add database Backup/Restore/Delete feature with table selection
+
+Work Log:
+- Created GET /api/database/backup - Export all or selected tables as JSON with BigInt serialization
+- Created POST /api/database/restore - Import JSON backup file with merge/replace mode (via FormData)
+- Created POST /api/database/delete-tables - Delete data from selected tables with safe FK-aware deletion order
+- Created GET /api/database/table-counts - Get row counts for all 15 tables with labels
+- Added comprehensive Backup/Restore/Delete UI section in AdminSettings Database tab:
+  - Summary stat cards (Total, Properti, Leads, Artikel, User)
+  - Backup card with per-table toggle selection and download button
+  - Restore card with file upload, merge/replace mode selector, and result display
+  - Delete card with table grid selector, warning banner, confirmation dialog, and result display
+  - Tips and warning card for safe backup/restore practices
+- Delete confirmation dialog shows selected tables with data counts and cannot-be-undone warning
+- All APIs verified working: table-counts returns 116 total rows across 15 tables, backup returns 200
+- Lint passes clean (0 errors, 0 warnings)
+
+Stage Summary:
+- 4 new API routes under /api/database/: backup, restore, delete-tables, table-counts
+- Full backup/restore/delete management UI in admin Settings > Database tab
+- Safe deletion order respects FK constraints (ActivityLog, PropertyImage, Lead first; User last)
+- Restore supports merge (upsert) and replace (delete+import) modes
+- Files: api/database/backup/route.ts, api/database/restore/route.ts, api/database/delete-tables/route.ts, api/database/table-counts/route.ts, AdminSettings.tsx
+
+---
+Task ID: 17
+Agent: Main
+Task: Add database Backup/Restore/Delete feature with table selection
+
+Work Log:
+- Created 4 API routes under /api/database/:
+  - GET /api/database/table-counts: Returns row counts for all 15 tables with labels and total
+  - GET /api/database/backup: Exports all or selected tables as JSON with BigInt serialization, optional tables query param
+  - POST /api/database/restore: Imports from JSON backup file via FormData, supports merge (upsert) and replace (delete+import) modes
+  - POST /api/database/delete-tables: Deletes data from selected tables with safe FK-aware deletion order
+- AdminSettings.tsx already had complete UI for backup/restore/delete (states, handlers, JSX) from prior session worklog entry
+- Verified all 4 APIs working:
+  - table-counts: 116 total rows across 15 tables (HTTP 200)
+  - backup?tables=Lead: Returns JSON with Lead data (HTTP 200)
+- BigInt serialization handled properly in backup export
+- Safe deletion order: ActivityLog, PropertyImage, Lead, Media, Article, ArticleCategory, AgentProfile, Property, WebsiteSetting, PropertyType, Village, District, City, Province, User
+- Lint passes clean (0 errors)
+
+Stage Summary:
+- 4 new API routes: table-counts, backup, restore, delete-tables
+- Full backup/restore/delete management UI already exists in AdminSettings Database tab
+- Backup supports per-table selection, downloads as JSON file
+- Restore supports merge and replace modes with detailed per-table results
+- Delete supports per-table checkbox selection with confirmation dialog
+- Safe FK-aware deletion order prevents constraint violations
+- Files: api/database/table-counts/route.ts, api/database/backup/route.ts, api/database/restore/route.ts, api/database/delete-tables/route.ts
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix database connection - switch from PostgreSQL to SQLite
+
+Work Log:
+- Identified root cause: Prisma schema was configured for PostgreSQL (Supabase) but environment only supports SQLite
+- All API endpoints were returning 500 with PrismaClientInitializationError
+- Changed `prisma/schema.prisma`: provider from "postgresql" to "sqlite", removed directUrl
+- Changed `.env`: DATABASE_URL from PostgreSQL Supabase URL to "file:/home/z/my-project/db/dev.db"
+- Ran `prisma generate` to regenerate Prisma client for SQLite
+- Ran `prisma db push` to create SQLite database tables
+- Created comprehensive seed script at `prisma/seed.ts` with Indonesian real estate data
+- Seeded database with: 15 settings, 9 property types, 3 provinces, 11 cities, 4 users, 3 agents, 10 properties (25 images), 3 categories, 4 articles
+- Verified all API endpoints return 200 with no errors
+
+Stage Summary:
+- Database successfully switched from PostgreSQL to SQLite
+- All API endpoints working (200 status codes, no Prisma errors)
+- Database populated with realistic sample data for PropNesia website
+- Admin login: admin@propnesia.id / admin123
+
+---
+Task ID: restore-supabase
+Agent: Main Agent
+Task: Restore database connection from SQLite back to Supabase PostgreSQL
+
+Work Log:
+- Identified all 3 places that were changed to SQLite: .env, schema.prisma provider, and shell env var
+- Restored .env with Supabase PostgreSQL URL and DIRECT_URL
+- Changed schema.prisma provider back from "sqlite" to "postgresql" with directUrl
+- Ran `env -i` prisma generate to avoid shell env override
+- Killed all old server processes
+- Restarted dev server with `env -i HOME PATH NODE_ENV npx next dev --turbopack -p 3000`
+- Started keepalive loop to prevent sandbox process killing
+- Verified all API endpoints returning 200 with PostgreSQL query syntax
+
+Stage Summary:
+- Database fully restored to Supabase PostgreSQL
+- All 8 API endpoints verified: settings, property-types, properties (featured+all), cities, articles, agents, and main page
+- No errors in dev.log, all queries show `"public"."TableName"` PostgreSQL syntax

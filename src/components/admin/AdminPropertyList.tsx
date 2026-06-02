@@ -14,9 +14,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Combobox } from '@/components/ui/combobox';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -144,7 +146,7 @@ export default function AdminPropertyList() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'template-import-properti-propnusa.xlsx';
+        a.download = 'template-import-properti-terimakunci.xlsx';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -166,7 +168,7 @@ export default function AdminPropertyList() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `properti-propnusa-${new Date().toISOString().slice(0, 10)}.xlsx`;
+        a.download = `properti-terimakunci-${new Date().toISOString().slice(0, 10)}.xlsx`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -252,39 +254,42 @@ export default function AdminPropertyList() {
                 className="pl-9"
               />
             </div>
-            <Combobox
-              options={[{ value: 'all', label: 'Semua Status' }, { value: 'dijual', label: 'Dijual' }, { value: 'disewa', label: 'Disewa' }, { value: 'draft', label: 'Draft' }, { value: 'terjual', label: 'Terjual' }, { value: 'tersewa', label: 'Tersewa' }]}
-              value={statusFilter}
-              onValueChange={(v) => { setStatusFilter(v); setPage(1); }}
-              placeholder="Status"
-              searchPlaceholder="Cari status..."
-              buttonClassName="w-full lg:w-[160px]"
-            />
-            <Combobox
-              options={[{ value: 'all', label: 'Semua Jenis' }, ...propertyTypes.map((t) => ({ value: t.id, label: t.name }))]}
-              value={typeFilter}
-              onValueChange={(v) => { setTypeFilter(v); setPage(1); }}
-              placeholder="Jenis Properti"
-              searchPlaceholder="Cari jenis..."
-              emptyMessage="Jenis tidak ditemukan"
-              buttonClassName="w-full lg:w-[180px]"
-            />
-            <Combobox
-              options={[{ value: 'all', label: 'Semua' }, { value: 'true', label: 'Published' }, { value: 'false', label: 'Unpublished' }]}
-              value={publishedFilter}
-              onValueChange={(v) => { setPublishedFilter(v); setPage(1); }}
-              placeholder="Published"
-              searchPlaceholder="Cari..."
-              buttonClassName="w-full lg:w-[160px]"
-            />
-            <Combobox
-              options={[{ value: 'all', label: 'Semua' }, { value: 'true', label: 'Featured' }, { value: 'false', label: 'Non-Featured' }]}
-              value={featuredFilter}
-              onValueChange={(v) => { setFeaturedFilter(v); setPage(1); }}
-              placeholder="Featured"
-              searchPlaceholder="Cari..."
-              buttonClassName="w-full lg:w-[160px]"
-            />
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-full lg:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Status</SelectItem>
+                <SelectItem value="dijual">Dijual</SelectItem>
+                <SelectItem value="disewa">Disewa</SelectItem>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="terjual">Terjual</SelectItem>
+                <SelectItem value="tersewa">Tersewa</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-full lg:w-[180px]"><SelectValue placeholder="Jenis" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Jenis</SelectItem>
+                {propertyTypes.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={publishedFilter} onValueChange={(v) => { setPublishedFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-full lg:w-[160px]"><SelectValue placeholder="Published" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua</SelectItem>
+                <SelectItem value="true">Published</SelectItem>
+                <SelectItem value="false">Unpublished</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={featuredFilter} onValueChange={(v) => { setFeaturedFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-full lg:w-[160px]"><SelectValue placeholder="Featured" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua</SelectItem>
+                <SelectItem value="true">Featured</SelectItem>
+                <SelectItem value="false">Non-Featured</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Bulk Actions */}

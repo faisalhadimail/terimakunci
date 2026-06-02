@@ -258,7 +258,7 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': 'attachment; filename="template-import-properti-propnusa.xlsx"',
+        'Content-Disposition': 'attachment; filename="template-import-properti-terimakunci.xlsx"',
         ...corsHeaders(),
       },
     })

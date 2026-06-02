@@ -46,7 +46,7 @@ export default function ContactPage() {
     return s?.value || fallback;
   };
 
-  const companyName = getSetting('site_name', 'PropNusa');
+  const companyName = getSetting('site_name', 'TerimaKunci');
   const companyPhone = getSetting('company_phone', '0812-3456-7890');
   const companyEmail = getSetting('company_email', 'info@proprnusa.com');
   const companyAddress = getSetting('company_address', 'Jl. Property No. 1, Bandung');

@@ -66,7 +66,7 @@ export default function PropertyDetailPage() {
   };
 
   const whatsappNumber = getSetting('whatsapp_number', '6281234567890');
-  const siteName = getSetting('site_name', 'PropNusa');
+  const siteName = getSetting('site_name', 'TerimaKunci');
 
   // Build share URL from current page
   const getShareUrl = useCallback(() => {

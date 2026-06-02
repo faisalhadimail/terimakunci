@@ -44,7 +44,7 @@ export default function AdminLogin() {
             <Building2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
           </div>
           <CardTitle className="text-2xl font-bold">Admin Panel</CardTitle>
-          <CardDescription>Masuk ke dashboard PropNusa</CardDescription>
+          <CardDescription>Masuk ke dashboard TerimaKunci</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

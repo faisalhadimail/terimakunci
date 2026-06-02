@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import type { City, District } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,8 +15,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Plus, Pencil, Trash2, MapPin } from 'lucide-react';
+import { Plus, Pencil, Trash2, MapPin, Download, Upload, Loader2 } from 'lucide-react';
 import { fetchWithAuth } from '@/lib/api';
+import { toast } from 'sonner';
 
 export default function AdminLocationManager() {
   const [cities, setCities] = useState<City[]>([]);
@@ -30,6 +31,9 @@ export default function AdminLocationManager() {
   const [editId, setEditId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<string>('');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -116,11 +120,102 @@ export default function AdminLocationManager() {
 
   const typeLabel: Record<string, string> = { city: 'Kabupaten/Kota', district: 'Kecamatan' };
 
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await fetchWithAuth('/api/locations/template');
+      if (!res.ok) {
+        toast.error('Gagal mengunduh template');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'template-lokasi-terimakunci.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Template berhasil diunduh');
+    } catch {
+      toast.error('Gagal mengunduh template');
+    }
+  };
+
+  const handleUploadExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadResult('');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetchWithAuth('/api/locations/import', {
+        method: 'POST',
+        body: formData,
+      });
+      const json = await res.json();
+      if (res.ok) {
+        const msg = `Berhasil: ${json.created} dibuat, ${json.skipped} dilewati${json.errors?.length ? `, ${json.errors.length} peringatan` : ''}`;
+        setUploadResult(msg);
+        toast.success('Import berhasil', { description: msg });
+        fetchData();
+        if (selectedCity) fetchDistricts(selectedCity);
+      } else {
+        const errMsg = json.error || 'Gagal mengimport file';
+        setUploadResult(errMsg);
+        toast.error(errMsg);
+      }
+    } catch {
+      toast.error('Gagal mengimport file');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Manajemen Lokasi</h2>
         <p className="text-sm text-muted-foreground">Kelola data wilayah: kabupaten/kota dan kecamatan</p>
+      </div>
+
+      {/* Bulk upload section */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        {uploadResult && (
+          <p className="text-sm text-muted-foreground">{uploadResult}</p>
+        )}
+        <div className="flex items-center gap-2 ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadTemplate}
+          >
+            <Download className="h-4 w-4 mr-1" />
+            Download Template
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4 mr-1" />
+            )}
+            {uploading ? 'Mengupload...' : 'Upload Excel'}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={handleUploadExcel}
+          />
+        </div>
       </div>
 
       <Tabs defaultValue="cities">

@@ -166,7 +166,7 @@ function MobileSidebar({ currentRoute, onNavigate }: {
         <SheetHeader className="p-4 border-b">
           <SheetTitle className="flex items-center gap-2">
             <Building2 className="h-5 w-5 text-emerald-600" />
-            <span className="font-bold">PropNusa</span>
+            <span className="font-bold">TerimaKunci</span>
           </SheetTitle>
         </SheetHeader>
         <ScrollArea className="h-[calc(100vh-80px)]">
@@ -231,7 +231,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r lg:bg-white lg:dark:bg-gray-900">
         <div className="flex items-center gap-2 px-4 py-4 border-b">
           <Building2 className="h-6 w-6 text-emerald-600" />
-          <span className="font-bold text-lg">PropNusa</span>
+          <span className="font-bold text-lg">TerimaKunci</span>
         </div>
         <ScrollArea className="flex-1">
           <SidebarNav items={menuItems} currentRoute={route} onNavigate={navigate} />
@@ -266,7 +266,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               <SheetHeader className="p-4 border-b">
                 <SheetTitle className="flex items-center gap-2">
                   <Building2 className="h-5 w-5 text-emerald-600" />
-                  <span className="font-bold">PropNusa</span>
+                  <span className="font-bold">TerimaKunci</span>
                 </SheetTitle>
               </SheetHeader>
               <ScrollArea className="h-[calc(100vh-80px)]">

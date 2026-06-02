@@ -37,7 +37,7 @@ export default function FrontendLayout({ children }: FrontendLayoutProps) {
     return s?.value || fallback;
   };
 
-  const companyName = getSetting('site_name', 'PropNusa');
+  const companyName = getSetting('site_name', 'TerimaKunci');
   const whatsappNumber = getSetting('whatsapp_number', '6281234567890');
   const currentPage = route.page;
 

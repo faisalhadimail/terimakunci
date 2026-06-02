@@ -44,19 +44,19 @@ const TESTIMONIALS = [
   {
     name: 'Budi Santoso',
     role: 'Pembeli Rumah',
-    text: 'Pelayanan sangat memuaskan! Agen PropNusa sangat membantu dalam proses pencarian rumah impian saya.',
+    text: 'Pelayanan sangat memuaskan! Agen TerimaKunci sangat membantu dalam proses pencarian rumah impian saya.',
     rating: 5,
   },
   {
     name: 'Siti Rahayu',
     role: 'Investor Properti',
-    text: 'Sudah 3 kali investasi properti melalui PropNusa. Harga kompetitif dan legalitas terjamin.',
+    text: 'Sudah 3 kali investasi properti melalui TerimaKunci. Harga kompetitif dan legalitas terjamin.',
     rating: 5,
   },
   {
     name: 'Ahmad Wijaya',
     role: 'Pembeli Tanah',
-    text: 'Proses pembelian tanah berjalan lancar. Tim PropNusa profesional dan responsif.',
+    text: 'Proses pembelian tanah berjalan lancar. Tim TerimaKunci profesional dan responsif.',
     rating: 4,
   },
 ];
@@ -144,7 +144,7 @@ export default function HomePage() {
         <div className="relative px-4 py-10">
           <div className="text-center max-w-3xl mx-auto">
             <Badge className="bg-emerald-500/30 text-emerald-100 border-emerald-400/30 mb-3 text-xs px-2.5 py-0.5">
-              PropNusa - Platform Properti Terpercaya
+              TerimaKunci - Platform Properti Terpercaya
             </Badge>
             <h1 className="text-2xl font-bold leading-tight mb-2">
               Temukan Properti Impian Anda
@@ -275,7 +275,7 @@ export default function HomePage() {
       <section className="py-5 bg-emerald-700 text-white">
         <div className="px-4">
           <div className="text-center mb-4">
-            <h2 className="text-lg font-bold">Mengapa Memilih PropNusa?</h2>
+            <h2 className="text-lg font-bold">Mengapa Memilih TerimaKunci?</h2>
             <p className="text-emerald-200 mt-1 text-xs">Keunggulan yang kami tawarkan</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -440,7 +440,7 @@ export default function HomePage() {
             Butuh bantuan menemukan properti yang tepat? Tim kami siap membantu Anda via WhatsApp.
           </p>
           <a
-            href={`https://wa.me/${whatsappNumber}?text=Halo, saya tertarik dengan properti di PropNusa.`}
+            href={`https://wa.me/${whatsappNumber}?text=Halo, saya tertarik dengan properti di TerimaKunci.`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-emerald-700 font-semibold rounded-xl hover:bg-gray-100 transition-colors text-sm shadow-lg"

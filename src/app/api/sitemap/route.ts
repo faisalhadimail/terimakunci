@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       flat[s.key] = s.value
     }
 
-    const baseUrl = flat.seo_canonical_url?.replace(/\/+$/, '') || 'https://www.propnusa.com'
+    const baseUrl = flat.seo_canonical_url?.replace(/\/+$/, '') || 'https://www.terimakunci.com'
     const defaultChangefreq = flat.seo_sitemap_changefreq || 'weekly'
     const defaultPriority = flat.seo_sitemap_priority || '0.8'
 

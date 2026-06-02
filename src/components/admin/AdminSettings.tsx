@@ -17,7 +17,11 @@ import {
   Globe, FileText, Download, Eye, Copy, RefreshCw, MapPin, FileArchive, Bot,
   Database, Code2, Terminal, Key, Shield, HardDrive, Zap, AlertTriangle, ChevronDown,
   ExternalLink, Play, CircleDot, ArrowRight, CheckCircle, XCircle, Info,
+  Upload, Trash2, ArchiveRestore, HardDriveDownload, Unplug,
 } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { fetchWithAuth } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -31,39 +35,6 @@ interface SitemapStats {
 }
 
 type SqlTab = 'ddl' | 'seed' | 'schema' | 'env';
-
-// ============ Extracted components (outside parent to prevent remount on every keystroke) ============
-
-function SettingField({
-  settingKey, label, type = 'text', placeholder = '', value, onChange,
-}: {
-  settingKey: string; label: string; type?: string; placeholder?: string;
-  value: string; onChange: (val: string) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={settingKey} className="text-sm font-medium">{label}</Label>
-      {type === 'textarea' ? (
-        <Textarea id={settingKey} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={3} className="min-h-[80px]" />
-      ) : (
-        <Input id={settingKey} type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="h-10" />
-      )}
-    </div>
-  );
-}
-
-function SaveGroupButton({
-  group, saving, lastSavedGroup, onSave,
-}: {
-  group: string; saving: boolean; lastSavedGroup: string | null; onSave: (group: string) => void;
-}) {
-  return (
-    <Button onClick={() => onSave(group)} disabled={saving} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
-      {saving && lastSavedGroup === group ? <Loader2 className="h-3 w-3 animate-spin" /> : lastSavedGroup === group ? <CheckCircle2 className="h-3 w-3" /> : <Save className="h-3 w-3" />}
-      {lastSavedGroup === group ? 'Tersimpan' : 'Simpan'}
-    </Button>
-  );
-}
 
 export default function AdminSettings() {
   const [settings, setSettings] = useState<WebsiteSetting[]>([]);
@@ -96,6 +67,22 @@ export default function AdminSettings() {
   const [dbStep, setDbStep] = useState(0);
   const [dbTestLoading, setDbTestLoading] = useState(false);
   const [dbTestResult, setDbTestResult] = useState<{ success: boolean; latency: number; version: string; error?: string } | null>(null);
+
+  // Backup/Restore/Delete states
+  const [tableCounts, setTableCounts] = useState<Record<string, number>>({});
+  const [tableLabels, setTableLabels] = useState<Record<string, string>>({});
+  const [tableTotal, setTableTotal] = useState(0);
+  const [countsLoading, setCountsLoading] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupSelectedTables, setBackupSelectedTables] = useState<string[]>([]);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreMode, setRestoreMode] = useState('merge');
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<{ message: string; totalRestored: number; totalSkipped: number; details: { table: string; restored: number; skipped: number; error?: string }[] } | null>(null);
+  const [deleteTables, setDeleteTables] = useState<string[]>([]);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteResult, setDeleteResult] = useState<{ message: string; totalDeleted: number; details: { table: string; label: string; deleted: number }[] } | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -135,7 +122,7 @@ export default function AdminSettings() {
         const connStr = `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${dbName}?pgbouncer=true&connect_timeout=15`;
         const directUrl = `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${dbName}?connect_timeout=15`;
         const envStr = [
-          `# PropNusa - Supabase Environment Variables`,
+          `# TerimaKunci - Supabase Environment Variables`,
           `# ============================================`,
           ``,
           `# Database Connection (via Supabase Pooler)`,
@@ -145,9 +132,9 @@ export default function AdminSettings() {
           `DIRECT_URL="${directUrl}"`,
           ``,
           `# App Config`,
-          `NEXT_PUBLIC_APP_URL="https://www.propnusa.com"`,
+          `NEXT_PUBLIC_APP_URL="https://www.terimakunci.com"`,
           `NEXTAUTH_SECRET="generate-a-secure-random-string-32chars"`,
-          `NEXTAUTH_URL="https://www.propnusa.com"`,
+          `NEXTAUTH_URL="https://www.terimakunci.com"`,
           ``,
           `# Connection Pool Size`,
           `DATABASE_POOL_SIZE=${dbPoolSize}`,
@@ -187,12 +174,6 @@ export default function AdminSettings() {
   };
 
   const getValue = (key: string) => editedSettings[key] || '';
-
-  // Helper to bind setting key to value/onChange for SettingField
-  const fieldProps = (key: string) => ({
-    value: getValue(key),
-    onChange: (val: string) => updateValue(key, val),
-  });
 
   const getGroupSettings = (group: string) => settings.filter((s) => s.group === group);
 
@@ -380,6 +361,118 @@ export default function AdminSettings() {
     }
   };
 
+  // Backup/Restore/Delete handlers
+  const loadTableCounts = useCallback(async () => {
+    setCountsLoading(true);
+    try {
+      const res = await fetchWithAuth('/api/database/table-counts');
+      const json = await res.json();
+      if (json.data) {
+        setTableCounts(json.data.counts);
+        setTableLabels(json.data.labels);
+        setTableTotal(json.data.total);
+      }
+    } catch { toast.error('Gagal memuat statistik tabel'); }
+    finally { setCountsLoading(false); }
+  }, []);
+
+  const toggleBackupTable = (table: string) => {
+    setBackupSelectedTables((prev) =>
+      prev.includes(table) ? prev.filter((t) => t !== table) : [...prev, table]
+    );
+  };
+
+  const toggleDeleteTable = (table: string) => {
+    setDeleteTables((prev) =>
+      prev.includes(table) ? prev.filter((t) => t !== table) : [...prev, table]
+    );
+  };
+
+  const handleBackup = async () => {
+    setBackupLoading(true);
+    try {
+      const tables = backupSelectedTables.length > 0 ? backupSelectedTables.join(',') : '';
+      const url = `/api/database/backup${tables ? `?tables=${tables}` : ''}`;
+      const res = await fetchWithAuth(url);
+      if (!res.ok) { toast.error('Gagal backup database'); return; }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      a.download = `terimakunci-backup-${timestamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+      toast.success('Backup berhasil didownload!');
+    } catch { toast.error('Gagal backup database'); }
+    finally { setBackupLoading(false); }
+  };
+
+  const handleRestore = async () => {
+    if (!restoreFile) return;
+    setRestoreLoading(true);
+    setRestoreResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', restoreFile);
+      formData.append('mode', restoreMode);
+      const res = await fetchWithAuth('/api/database/restore', {
+        method: 'POST',
+        body: formData,
+      });
+      const json = await res.json();
+      if (json.data) {
+        setRestoreResult(json.data);
+        toast.success(`Restore selesai! ${json.data.totalRestored} data berhasil diimport`);
+      } else if (json.error) {
+        toast.error(json.error);
+      }
+    } catch { toast.error('Gagal restore database'); }
+    finally { setRestoreLoading(false); }
+  };
+
+  const handleDeleteTables = async () => {
+    setDeleteLoading(true);
+    setDeleteResult(null);
+    try {
+      const res = await fetchWithAuth('/api/database/delete-tables', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tables: deleteTables }),
+      });
+      const json = await res.json();
+      if (json.data) {
+        setDeleteResult(json.data);
+        toast.success(`${json.data.totalDeleted} data berhasil dihapus`);
+        setDeleteDialogOpen(false);
+        setDeleteTables([]);
+        loadTableCounts();
+      } else if (json.error) {
+        toast.error(json.error);
+      }
+    } catch { toast.error('Gagal menghapus data'); }
+    finally { setDeleteLoading(false); }
+  };
+
+  const SettingField = ({ settingKey, label, type = 'text', placeholder = '' }: { settingKey: string; label: string; type?: string; placeholder?: string }) => (
+    <div className="space-y-2">
+      <Label htmlFor={settingKey} className="text-sm font-medium">{label}</Label>
+      {type === 'textarea' ? (
+        <Textarea id={settingKey} value={getValue(settingKey)} onChange={(e) => updateValue(settingKey, e.target.value)} placeholder={placeholder} rows={3} className="min-h-[80px]" />
+      ) : (
+        <Input id={settingKey} type={type} value={getValue(settingKey)} onChange={(e) => updateValue(settingKey, e.target.value)} placeholder={placeholder} className="h-10" />
+      )}
+    </div>
+  );
+
+  const SaveGroupButton = ({ group }: { group: string }) => (
+    <Button onClick={() => handleSave(group)} disabled={saving} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
+      {saving && lastSavedGroup === group ? <Loader2 className="h-3 w-3 animate-spin" /> : lastSavedGroup === group ? <CheckCircle2 className="h-3 w-3" /> : <Save className="h-3 w-3" />}
+      {lastSavedGroup === group ? 'Tersimpan' : 'Simpan'}
+    </Button>
+  );
+
   if (loading) {
     return (
       <div className="p-6 space-y-4">
@@ -390,11 +483,11 @@ export default function AdminSettings() {
     );
   }
 
-  const canonicalUrl = getValue('seo_canonical_url') || 'https://www.propnusa.com';
+  const canonicalUrl = getValue('seo_canonical_url') || 'https://www.terimakunci.com';
 
   const sqlTabMeta: Record<SqlTab, { label: string; icon: typeof Code2; desc: string; filename: string }> = {
-    ddl: { label: 'DDL (Create Table)', icon: Database, desc: 'SQL untuk membuat tabel', filename: 'propnusa-schema.sql' },
-    seed: { label: 'Seed Data', icon: HardDrive, desc: 'Data awal untuk database', filename: 'propnusa-seed.sql' },
+    ddl: { label: 'DDL (Create Table)', icon: Database, desc: 'SQL untuk membuat tabel', filename: 'terimakunci-schema.sql' },
+    seed: { label: 'Seed Data', icon: HardDrive, desc: 'Data awal untuk database', filename: 'terimakunci-seed.sql' },
     schema: { label: 'Prisma Schema', icon: Code2, desc: 'schema.prisma untuk PostgreSQL', filename: 'schema.prisma' },
     env: { label: 'Environment (.env)', icon: Terminal, desc: 'Konfigurasi environment', filename: '.env' },
   };
@@ -405,7 +498,7 @@ export default function AdminSettings() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold">Pengaturan Website</h2>
-          <p className="text-sm text-muted-foreground">Kelola pengaturan website PropNusa</p>
+          <p className="text-sm text-muted-foreground">Kelola pengaturan website TerimaKunci</p>
         </div>
         <Button onClick={handleSaveAll} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 self-start">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -435,15 +528,15 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><Settings className="h-4 w-4 text-emerald-600" /> Pengaturan Umum</CardTitle>
                   <CardDescription>Nama, logo, dan informasi dasar website</CardDescription>
                 </div>
-                <SaveGroupButton group="general" saving={saving} lastSavedGroup={lastSavedGroup} onSave={handleSave} />
+                <SaveGroupButton group="general" />
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="site_name" label="Nama Website" placeholder="PropNusa" {...fieldProps('site_name')} />
-              <SettingField settingKey="site_tagline" label="Tagline" placeholder="Jual Beli Properti Terpercaya" {...fieldProps('site_tagline')} />
-              <SettingField settingKey="site_logo" label="Logo URL" placeholder="https://example.com/logo.png" {...fieldProps('site_logo')} />
-              <SettingField settingKey="site_favicon" label="Favicon URL" placeholder="https://example.com/favicon.ico" {...fieldProps('site_favicon')} />
-              <SettingField settingKey="site_description" label="Deskripsi Website" type="textarea" placeholder="Deskripsi singkat website" {...fieldProps('site_description')} />
+              <SettingField settingKey="site_name" label="Nama Website" placeholder="TerimaKunci" />
+              <SettingField settingKey="site_tagline" label="Tagline" placeholder="Jual Beli Properti Terpercaya" />
+              <SettingField settingKey="site_logo" label="Logo URL" placeholder="https://example.com/logo.png" />
+              <SettingField settingKey="site_favicon" label="Favicon URL" placeholder="https://example.com/favicon.ico" />
+              <SettingField settingKey="site_description" label="Deskripsi Website" type="textarea" placeholder="Deskripsi singkat website" />
             </CardContent>
           </Card>
         </TabsContent>
@@ -457,16 +550,16 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><Phone className="h-4 w-4 text-emerald-600" /> Kontak</CardTitle>
                   <CardDescription>Informasi kontak yang ditampilkan di website</CardDescription>
                 </div>
-                <SaveGroupButton group="contact" saving={saving} lastSavedGroup={lastSavedGroup} onSave={handleSave} />
+                <SaveGroupButton group="contact" />
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="contact_phone" label="Telepon" placeholder="+62 xxx" {...fieldProps('contact_phone')} />
-              <SettingField settingKey="contact_whatsapp" label="WhatsApp" placeholder="+62 xxx" {...fieldProps('contact_whatsapp')} />
-              <SettingField settingKey="contact_email" label="Email" placeholder="info@propnusa.com" type="email" {...fieldProps('contact_email')} />
-              <SettingField settingKey="contact_address" label="Alamat" placeholder="Alamat kantor" {...fieldProps('contact_address')} />
-              <SettingField settingKey="contact_map_embed" label="Google Maps Embed URL" placeholder="https://maps.google.com/..." {...fieldProps('contact_map_embed')} />
-              <SettingField settingKey="contact_working_hours" label="Jam Operasional" placeholder="Sen-Sab 09:00-17:00" {...fieldProps('contact_working_hours')} />
+              <SettingField settingKey="contact_phone" label="Telepon" placeholder="+62 xxx" />
+              <SettingField settingKey="contact_whatsapp" label="WhatsApp" placeholder="+62 xxx" />
+              <SettingField settingKey="contact_email" label="Email" placeholder="info@terimakunci.com" type="email" />
+              <SettingField settingKey="contact_address" label="Alamat" placeholder="Alamat kantor" />
+              <SettingField settingKey="contact_map_embed" label="Google Maps Embed URL" placeholder="https://maps.google.com/..." />
+              <SettingField settingKey="contact_working_hours" label="Jam Operasional" placeholder="Sen-Sab 09:00-17:00" />
             </CardContent>
           </Card>
         </TabsContent>
@@ -480,15 +573,15 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><Share2 className="h-4 w-4 text-emerald-600" /> Sosial Media</CardTitle>
                   <CardDescription>Link sosial media website</CardDescription>
                 </div>
-                <SaveGroupButton group="social" saving={saving} lastSavedGroup={lastSavedGroup} onSave={handleSave} />
+                <SaveGroupButton group="social" />
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="social_facebook" label="Facebook URL" placeholder="https://facebook.com/..." {...fieldProps('social_facebook')} />
-              <SettingField settingKey="social_instagram" label="Instagram URL" placeholder="https://instagram.com/..." {...fieldProps('social_instagram')} />
-              <SettingField settingKey="social_youtube" label="YouTube URL" placeholder="https://youtube.com/..." {...fieldProps('social_youtube')} />
-              <SettingField settingKey="social_tiktok" label="TikTok URL" placeholder="https://tiktok.com/..." {...fieldProps('social_tiktok')} />
-              <SettingField settingKey="social_linkedin" label="LinkedIn URL" placeholder="https://linkedin.com/..." {...fieldProps('social_linkedin')} />
+              <SettingField settingKey="social_facebook" label="Facebook URL" placeholder="https://facebook.com/..." />
+              <SettingField settingKey="social_instagram" label="Instagram URL" placeholder="https://instagram.com/..." />
+              <SettingField settingKey="social_youtube" label="YouTube URL" placeholder="https://youtube.com/..." />
+              <SettingField settingKey="social_tiktok" label="TikTok URL" placeholder="https://tiktok.com/..." />
+              <SettingField settingKey="social_linkedin" label="LinkedIn URL" placeholder="https://linkedin.com/..." />
             </CardContent>
           </Card>
         </TabsContent>
@@ -503,16 +596,16 @@ export default function AdminSettings() {
                     <CardTitle className="text-base flex items-center gap-2"><Search className="h-4 w-4 text-emerald-600" /> SEO Meta</CardTitle>
                     <CardDescription>Pengaturan SEO global website</CardDescription>
                   </div>
-                  <SaveGroupButton group="seo" saving={saving} lastSavedGroup={lastSavedGroup} onSave={handleSave} />
+                  <SaveGroupButton group="seo" />
                 </div>
               </CardHeader>
               <CardContent className="grid gap-5 sm:grid-cols-2">
-                <SettingField settingKey="seo_meta_title" label="Default Meta Title" placeholder="PropNusa - Jual Beli Properti" {...fieldProps('seo_meta_title')} />
-                <SettingField settingKey="seo_canonical_url" label="Canonical URL" placeholder="https://www.propnusa.com" {...fieldProps('seo_canonical_url')} />
-                <SettingField settingKey="seo_meta_description" label="Default Meta Description" type="textarea" placeholder="Deskripsi default untuk SEO" {...fieldProps('seo_meta_description')} />
-                <SettingField settingKey="seo_meta_keywords" label="Default Meta Keywords" placeholder="properti, jual, beli, rumah" {...fieldProps('seo_meta_keywords')} />
-                <SettingField settingKey="seo_robots" label="Robots Meta" placeholder="index, follow" {...fieldProps('seo_robots')} />
-                <SettingField settingKey="seo_og_image" label="Default OG Image URL" placeholder="https://example.com/og.jpg" {...fieldProps('seo_og_image')} />
+                <SettingField settingKey="seo_meta_title" label="Default Meta Title" placeholder="TerimaKunci - Jual Beli Properti" />
+                <SettingField settingKey="seo_canonical_url" label="Canonical URL" placeholder="https://www.terimakunci.com" />
+                <SettingField settingKey="seo_meta_description" label="Default Meta Description" type="textarea" placeholder="Deskripsi default untuk SEO" />
+                <SettingField settingKey="seo_meta_keywords" label="Default Meta Keywords" placeholder="properti, jual, beli, rumah" />
+                <SettingField settingKey="seo_robots" label="Robots Meta" placeholder="index, follow" />
+                <SettingField settingKey="seo_og_image" label="Default OG Image URL" placeholder="https://example.com/og.jpg" />
               </CardContent>
             </Card>
 
@@ -693,15 +786,15 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><BarChart3 className="h-4 w-4 text-emerald-600" /> Analytics</CardTitle>
                   <CardDescription>Kode tracking dan analytics</CardDescription>
                 </div>
-                <SaveGroupButton group="analytics" saving={saving} lastSavedGroup={lastSavedGroup} onSave={handleSave} />
+                <SaveGroupButton group="analytics" />
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="analytics_ga_id" label="Google Analytics ID" placeholder="G-XXXXXXXXXX" {...fieldProps('analytics_ga_id')} />
-              <SettingField settingKey="analytics_gtm_id" label="Google Tag Manager ID" placeholder="GTM-XXXXXXX" {...fieldProps('analytics_gtm_id')} />
-              <SettingField settingKey="analytics_fb_pixel" label="Facebook Pixel ID" placeholder="XXXXXXXXXXXXXXX" {...fieldProps('analytics_fb_pixel')} />
-              <SettingField settingKey="analytics_head_scripts" label="Custom Head Scripts" type="textarea" placeholder="Kode JavaScript yang di-inject di head" {...fieldProps('analytics_head_scripts')} />
-              <SettingField settingKey="analytics_body_scripts" label="Custom Body Scripts" type="textarea" placeholder="Kode JavaScript yang di-inject di body" {...fieldProps('analytics_body_scripts')} />
+              <SettingField settingKey="analytics_ga_id" label="Google Analytics ID" placeholder="G-XXXXXXXXXX" />
+              <SettingField settingKey="analytics_gtm_id" label="Google Tag Manager ID" placeholder="GTM-XXXXXXX" />
+              <SettingField settingKey="analytics_fb_pixel" label="Facebook Pixel ID" placeholder="XXXXXXXXXXXXXXX" />
+              <SettingField settingKey="analytics_head_scripts" label="Custom Head Scripts" type="textarea" placeholder="Kode JavaScript yang di-inject di head" />
+              <SettingField settingKey="analytics_body_scripts" label="Custom Body Scripts" type="textarea" placeholder="Kode JavaScript yang di-inject di body" />
             </CardContent>
           </Card>
         </TabsContent>
@@ -778,7 +871,7 @@ export default function AdminSettings() {
                       <li>Buka <span className="font-mono text-xs bg-emerald-100 px-1 rounded">supabase.com/dashboard</span></li>
                       <li>Login atau daftar akun baru</li>
                       <li>Klik <span className="font-semibold">New Project</span></li>
-                      <li>Isi nama project (contoh: <span className="font-mono text-xs bg-emerald-100 px-1 rounded">propnusa</span>)</li>
+                      <li>Isi nama project (contoh: <span className="font-mono text-xs bg-emerald-100 px-1 rounded">terimakunci</span>)</li>
                       <li>Pilih region: <span className="font-semibold">Southeast Asia (Singapore)</span></li>
                       <li>Buat database password — <span className="font-semibold">WAJIB dicatat!</span></li>
                       <li>Klik <span className="font-semibold">Create new project</span> dan tunggu provisioning selesai</li>
@@ -992,10 +1085,10 @@ export default function AdminSettings() {
                             const blob = new Blob([sqlContent.ddl], { type: 'text/sql' });
                             const a = document.createElement('a');
                             a.href = URL.createObjectURL(blob);
-                            a.download = 'propnusa-schema.sql';
+                            a.download = 'terimakunci-schema.sql';
                             document.body.appendChild(a); a.click(); document.body.removeChild(a);
                             URL.revokeObjectURL(a.href);
-                            toast.success('propnusa-schema.sql berhasil didownload');
+                            toast.success('terimakunci-schema.sql berhasil didownload');
                           }}>
                             <Download className="h-3 w-3" /> Download .sql
                           </Button>
@@ -1200,6 +1293,285 @@ export default function AdminSettings() {
                 </CardContent>
               </Card>
             )}
+            {/* ===== BACKUP / RESTORE / DELETE SECTION ===== */}
+            <Separator className="my-2" />
+            <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-white">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-amber-600 flex items-center justify-center"><HardDriveDownload className="h-4 w-4 text-white" /></div>
+                    <div>
+                      <CardTitle className="text-base">Backup, Restore & Hapus Data</CardTitle>
+                      <CardDescription>Kelola backup database, restore data, atau hapus data per tabel</CardDescription>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={loadTableCounts} disabled={countsLoading}>
+                    <RefreshCw className={`h-3 w-3 ${countsLoading ? 'animate-spin' : ''}`} /> Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Table counts summary */}
+                {tableTotal > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-center">
+                      <div className="text-lg font-bold text-emerald-700">{tableTotal}</div>
+                      <div className="text-[10px] text-emerald-600">Total Data</div>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 text-center">
+                      <div className="text-lg font-bold text-blue-700">{tableCounts.Property || 0}</div>
+                      <div className="text-[10px] text-blue-600">Properti</div>
+                    </div>
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5 text-center">
+                      <div className="text-lg font-bold text-purple-700">{tableCounts.Lead || 0}</div>
+                      <div className="text-[10px] text-purple-600">Leads</div>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-center">
+                      <div className="text-lg font-bold text-amber-700">{tableCounts.Article || 0}</div>
+                      <div className="text-[10px] text-amber-600">Artikel</div>
+                    </div>
+                    <div className="bg-sky-50 border border-sky-200 rounded-lg p-2.5 text-center">
+                      <div className="text-lg font-bold text-sky-700">{tableCounts.User || 0}</div>
+                      <div className="text-[10px] text-sky-600">User</div>
+                    </div>
+                  </div>
+                )}
+                {tableTotal === 0 && !countsLoading && (
+                  <Button variant="outline" size="sm" className="w-full" onClick={loadTableCounts} disabled={countsLoading}>
+                    {countsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Database className="h-3.5 w-3.5 mr-1.5" />}
+                    Muat Statistik Tabel
+                  </Button>
+                )}
+
+                <div className="grid gap-4 lg:grid-cols-3">
+                  {/* BACKUP CARD */}
+                  <Card className="border-emerald-200">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-lg bg-emerald-100 flex items-center justify-center"><Download className="h-3.5 w-3.5 text-emerald-700" /></div>
+                        <CardTitle className="text-sm">Backup Database</CardTitle>
+                      </div>
+                      <CardDescription className="text-xs">Export seluruh data ke file JSON</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Pilih Tabel</Label>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant={backupSelectedTables.length === 0 ? 'default' : 'outline'}
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => setBackupSelectedTables([])}
+                          >
+                            Semua ({tableTotal})
+                          </Button>
+                          {Object.entries(tableLabels).map(([key, label]) => (
+                            <button
+                              key={key}
+                              onClick={() => toggleBackupTable(key)}
+                              className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                                backupSelectedTables.length === 0 || backupSelectedTables.includes(key)
+                                  ? 'bg-emerald-100 border-emerald-300 text-emerald-700'
+                                  : 'bg-gray-50 border-gray-200 text-gray-400 line-through'
+                              }`}
+                              title={`${label}: ${tableCounts[key] || 0} data`}
+                            >
+                              {tableCounts[key] || 0}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <Button
+                        onClick={handleBackup}
+                        disabled={backupLoading || tableTotal === 0}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 h-9 text-sm"
+                      >
+                        {backupLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                        {backupLoading ? 'Mengexport...' : 'Download Backup JSON'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  {/* RESTORE CARD */}
+                  <Card className="border-blue-200">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-lg bg-blue-100 flex items-center justify-center"><Upload className="h-3.5 w-3.5 text-blue-700" /></div>
+                        <CardTitle className="text-sm">Restore Database</CardTitle>
+                      </div>
+                      <CardDescription className="text-xs">Import data dari file backup JSON</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div
+                        className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
+                        onClick={() => document.getElementById('restore-file-input')?.click()}
+                      >
+                        <input
+                          id="restore-file-input"
+                          type="file"
+                          accept=".json"
+                          className="hidden"
+                          onChange={(e) => setRestoreFile(e.target.files?.[0] || null)}
+                        />
+                        {restoreFile ? (
+                          <div className="space-y-1">
+                            <FileArchive className="h-6 w-6 text-blue-600 mx-auto" />
+                            <p className="text-xs font-medium text-blue-700 truncate">{restoreFile.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{(restoreFile.size / 1024).toFixed(1)} KB</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <Upload className="h-6 w-6 text-muted-foreground mx-auto" />
+                            <p className="text-xs text-muted-foreground">Klik atau drag file .json</p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Mode Restore</Label>
+                        <Select value={restoreMode} onValueChange={setRestoreMode}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="merge">Merge (update jika ada, buat baru)</SelectItem>
+                            <SelectItem value="replace">Replace (hapus lalu import)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        onClick={handleRestore}
+                        disabled={restoreLoading || !restoreFile}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-1.5 h-9 text-sm"
+                      >
+                        {restoreLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArchiveRestore className="h-3.5 w-3.5" />}
+                        {restoreLoading ? 'Merestore...' : 'Restore Data'}
+                      </Button>
+                      {/* Restore result */}
+                      {restoreResult && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1.5 text-xs">
+                          <p className="font-semibold text-blue-800">{restoreResult.message}</p>
+                          <div className="space-y-1">
+                            {restoreResult.details.filter(d => d.restored > 0).map((d) => (
+                              <div key={d.table} className="flex justify-between text-blue-700">
+                                <span>{tableLabels[d.table] || d.table}</span>
+                                <span className="font-medium">+{d.restored} data</span>
+                              </div>
+                            ))}
+                            {restoreResult.details.filter(d => d.skipped > 0).map((d) => (
+                              <div key={d.table} className="flex justify-between text-amber-700">
+                                <span>{tableLabels[d.table] || d.table}</span>
+                                <span className="font-medium">{d.skipped} skip</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* DELETE CARD */}
+                  <Card className="border-red-200">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-lg bg-red-100 flex items-center justify-center"><Trash2 className="h-3.5 w-3.5 text-red-700" /></div>
+                        <CardTitle className="text-sm">Hapus Data Tabel</CardTitle>
+                      </div>
+                      <CardDescription className="text-xs">Hapus semua data dari tabel tertentu</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Pilih Tabel yang Akan Dihapus</Label>
+                        <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
+                          {Object.entries(tableLabels).map(([key, label]) => (
+                            <button
+                              key={key}
+                              onClick={() => toggleDeleteTable(key)}
+                              className={`flex items-center justify-between text-[11px] px-2 py-1.5 rounded border transition-colors ${
+                                deleteTables.includes(key)
+                                  ? 'bg-red-100 border-red-300 text-red-700'
+                                  : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-red-200'
+                              }`}
+                            >
+                              <span className="truncate">{label}</span>
+                              <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">{tableCounts[key] || 0}</Badge>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {deleteTables.length > 0 && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs text-red-700">
+                          <p className="font-semibold">⚠ Peringatan!</p>
+                          <p className="mt-0.5">{deleteTables.length} tabel akan dihapus secara permanen. Pastikan Anda sudah backup data.</p>
+                        </div>
+                      )}
+                      <Button
+                        onClick={() => setDeleteDialogOpen(true)}
+                        disabled={deleteTables.length === 0}
+                        variant="destructive"
+                        className="w-full gap-1.5 h-9 text-sm"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Hapus {deleteTables.length} Tabel
+                      </Button>
+                      {/* Delete result */}
+                      {deleteResult && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1.5 text-xs">
+                          <p className="font-semibold text-red-800">{deleteResult.message}</p>
+                          <div className="space-y-1">
+                            {deleteResult.details.map((d) => (
+                              <div key={d.table} className="flex justify-between text-red-700">
+                                <span>{d.label}</span>
+                                <span className="font-medium">-{d.deleted} data</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1.5 text-xs text-amber-800">
+                  <p className="font-semibold flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Tips Backup & Restore:</p>
+                  <ul className="list-disc list-inside space-y-0.5 ml-1">
+                    <li>Selalu backup sebelum restore atau menghapus data</li>
+                    <li>File backup berformat JSON dengan semua data tabel</li>
+                    <li>Mode <strong>Merge</strong> aman untuk update data tanpa menghapus yang lain</li>
+                    <li>Mode <strong>Replace</strong> akan menghapus data lama terlebih dahulu</li>
+                    <li>Penghapusan data bersifat permanen dan tidak bisa di-undo</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-red-600"><AlertTriangle className="h-5 w-5" /> Konfirmasi Hapus Data</DialogTitle>
+                  <DialogDescription>
+                    Anda akan menghapus <strong>SEMUA data</strong> dari {deleteTables.length} tabel berikut:
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-2">
+                  {deleteTables.map((t) => (
+                    <div key={t} className="flex items-center justify-between bg-red-50 rounded-lg px-3 py-2 text-sm">
+                      <span className="font-medium">{tableLabels[t] || t}</span>
+                      <Badge variant="destructive" className="text-xs">{tableCounts[t] || 0} data</Badge>
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-red-100 border border-red-300 rounded-lg p-3 text-sm text-red-800">
+                  <p className="font-semibold">⚠ Tindakan ini tidak dapat dibatalkan!</p>
+                  <p className="mt-1">Pastikan Anda sudah membuat backup sebelum melanjutkan.</p>
+                </div>
+                <DialogFooter className="gap-2">
+                  <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Batal</Button>
+                  <Button variant="destructive" onClick={handleDeleteTables} disabled={deleteLoading}>
+                    {deleteLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
+                    {deleteLoading ? 'Menghapus...' : 'Ya, Hapus Data'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </TabsContent>
 

@@ -188,7 +188,7 @@ export async function GET(request: NextRequest) {
 
     // Return as downloadable file
     const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    const filename = `properti-propnusa-${timestamp}.xlsx`
+    const filename = `properti-terimakunci-${timestamp}.xlsx`
 
     return new NextResponse(buffer, {
       status: 200,
