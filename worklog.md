@@ -796,3 +796,23 @@ Stage Summary:
 - 3 changes: new file (firebase-admin.ts), next.config.ts (serverExternalPackages), package.json (build scripts)
 - User needs to set FIREBASE_SERVICE_ACCOUNT_KEY env var on Vercel with service account JSON for data access
 
+---
+Task ID: Fix Login
+Agent: Main
+Task: Fix admin login failure and add database setup endpoint
+
+Work Log:
+- Investigated login failure: Firebase credentials not available in sandbox, seed data may not exist in Firestore
+- Created /api/setup endpoint (POST) that seeds all essential data: admin user, property types, website settings, provinces, cities, article categories
+- /api/setup uses upsert logic — safe to run multiple times (skips existing data)
+- POST /api/setup with {force:true} resets admin password
+- Updated /api/auth/login to check if database has any users and return helpful error message suggesting to run /api/setup
+- Verified all endpoints compile and run correctly (credential errors are expected in sandbox)
+- Lint passes clean (0 errors)
+
+Stage Summary:
+- New endpoint: POST /api/setup — seeds database with admin user (admin@properti.com / admin123)
+- New endpoint: GET /api/setup — checks database initialization status
+- Login now returns "Database belum diinisialisasi" hint if no users exist
+- User must call POST /api/setup on their Vercel deployment after setting FIREBASE_SERVICE_ACCOUNT_KEY
+
