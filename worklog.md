@@ -773,3 +773,26 @@ Stage Summary:
 - Client-side filter fallback handles missing composite indexes gracefully
 - Seed data successfully populated in Firestore
 
+---
+Task ID: Vercel Fix
+Agent: Main
+Task: Fix Vercel build error - Module not found ./firebase-admin
+
+Work Log:
+- Diagnosed: src/lib/db.ts imports { getAdminDb } from "./firebase-admin" but the file was missing (lost during context truncation)
+- Created src/lib/firebase-admin.ts with getAdminDb() export that:
+  - Initializes Firebase Admin SDK singleton
+  - Supports FIREBASE_SERVICE_ACCOUNT_KEY env var (JSON string) - recommended for Vercel
+  - Falls back to GOOGLE_APPLICATION_CREDENTIALS env var
+  - Falls back to project ID only initialization
+- Updated next.config.ts: added firebase-admin and bcryptjs to serverExternalPackages (critical for Turbopack/Vercel bundling)
+- Updated package.json build script: removed "prisma generate" from build and postinstall (no longer using Prisma)
+- Verified lint passes (0 errors)
+- Verified dev server starts and page renders correctly
+- Verified API returns {"data":[]} (empty because no service account credentials in sandbox)
+
+Stage Summary:
+- Build error fixed: missing firebase-admin module recreated
+- 3 changes: new file (firebase-admin.ts), next.config.ts (serverExternalPackages), package.json (build scripts)
+- User needs to set FIREBASE_SERVICE_ACCOUNT_KEY env var on Vercel with service account JSON for data access
+
