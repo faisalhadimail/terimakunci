@@ -8,7 +8,49 @@ import {
   CollectionReference,
   DocumentReference,
 } from 'firebase-admin/firestore'
-import { getAdminDb } from './firebase-admin'
+import { initializeApp, cert, getApp, type App } from 'firebase-admin/app'
+import { getFirestore, type Firestore } from 'firebase-admin/firestore'
+
+// ─── Firebase Admin SDK singleton (inlined — no external dependency) ───
+let _dbInstance: Firestore | null = null
+
+function getAdminDb(): Firestore {
+  if (_dbInstance) return _dbInstance
+
+  let app: App
+  try {
+    app = getApp()
+  } catch {
+    // 1. Service account JSON from env var (recommended for Vercel)
+    const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY
+    if (saJson) {
+      try {
+        app = initializeApp({ credential: cert(JSON.parse(saJson)) })
+      } catch (err) {
+        throw new Error(
+          `[firebase-admin] Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY: ${err instanceof Error ? err.message : err}`
+        )
+      }
+    }
+    // 2. Google Application Default Credentials
+    else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      app = initializeApp()
+    }
+    // 3. Project ID only (works when ADC available, e.g. Cloud Run / Vercel)
+    else {
+      const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
+      if (!projectId) {
+        throw new Error(
+          '[firebase-admin] No credentials. Set FIREBASE_SERVICE_ACCOUNT_KEY or GOOGLE_APPLICATION_CREDENTIALS.'
+        )
+      }
+      app = initializeApp({ projectId })
+    }
+  }
+
+  _dbInstance = getFirestore(app)
+  return _dbInstance
+}
 
 type AdminFirestore = ReturnType<typeof getAdminDb>
 type DocData = { [key: string]: any }
@@ -110,21 +152,17 @@ function sortDocsClientSide(docs: Record<string, any>[], orderBy: any): Record<s
   return [...docs].sort((a, b) => {
     for (const { field, dir } of sortFields) {
       let va = a[field], vb = b[field]
-      // Handle null/undefined
       if (va == null && vb == null) continue
       if (va == null) return dir === 'asc' ? -1 : 1
       if (vb == null) return dir === 'asc' ? 1 : -1
-      // Handle dates
       if (va instanceof Date && vb instanceof Date) {
         const diff = va.getTime() - vb.getTime()
         if (diff !== 0) return dir === 'desc' ? -diff : diff
       }
-      // Handle strings
       if (typeof va === 'string' && typeof vb === 'string') {
         const cmp = va.localeCompare(vb)
         if (cmp !== 0) return dir === 'desc' ? -cmp : cmp
       }
-      // Handle numbers
       const diff = (va as number) - (vb as number)
       if (diff !== 0) return dir === 'desc' ? -diff : diff
     }
@@ -139,7 +177,6 @@ function buildQuery(
 ): Query {
   const { where: whereClause = {}, orderBy: orderByOpt, skip, take } = options
 
-  // Collect all filter conditions as {field, op, value} tuples
   const filters: { field: string; op: string; value: any }[] = []
 
   for (const [key, val] of Object.entries(whereClause)) {
@@ -169,13 +206,11 @@ function buildQuery(
     }
   }
 
-  // Apply chained .where() calls
   let q: Query = collectionRef
   for (const f of filters) {
     q = q.where(f.field, f.op as any, f.value)
   }
 
-  // Order by
   if (orderByOpt) {
     const obs = Array.isArray(orderByOpt) ? orderByOpt : [orderByOpt]
     for (const o of obs) {
@@ -191,7 +226,6 @@ function buildQuery(
     }
   }
 
-  // Limit for pagination
   const effectiveTake = take && skip ? take + skip : take
   if (effectiveTake) q = q.limit(effectiveTake)
 
@@ -394,20 +428,16 @@ function createModelAccessors(modelName: string) {
         if (options.include) await resolveIncludes(docs, options.include, collName)
         return docs
       } catch (error: any) {
-        // Fallback: if index is missing (FAILED_PRECONDITION), fetch all and filter/sort client-side
         if (error.message?.includes('FAILED_PRECONDITION') || error.code === 9) {
           try {
             const allDocs = await getDb().collection(collName).get()
             let docs = allDocs.docs.map(s => fromFirestoreDoc(s)!)
-            // Client-side filtering
             if (options.where && Object.keys(options.where).length > 0) {
               docs = filterDocsClientSide(docs, options.where)
             }
-            // Client-side sorting
             if (options.orderBy) {
               docs = sortDocsClientSide(docs, options.orderBy)
             }
-            // Pagination
             if (options.skip) docs = docs.length > options.skip ? docs.slice(options.skip) : []
             if (options.take && docs.length > options.take) docs = docs.slice(0, options.take)
             if (options.include) await resolveIncludes(docs, options.include, collName)
@@ -550,7 +580,6 @@ function createModelAccessors(modelName: string) {
         }
         return (await ref.count().get()).data().count
       } catch (error: any) {
-        // Fallback: count client-side
         if (error.message?.includes('FAILED_PRECONDITION') || error.code === 9) {
           try {
             const allDocs = await getDb().collection(collName).get()
