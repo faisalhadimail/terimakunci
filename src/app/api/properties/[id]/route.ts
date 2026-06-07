@@ -106,7 +106,7 @@ export async function PUT(
           isPublished: body.isPublished,
           publishedAt: body.isPublished && !existing.isPublished ? new Date() : existing.publishedAt,
         }),
-        ...(body.price !== undefined && { price: BigInt(body.price) }),
+        ...(body.price !== undefined && { price: Number(body.price) }),
         ...(body.priceDisplay !== undefined && { priceDisplay: body.priceDisplay }),
         ...(body.provinceId !== undefined && { provinceId: body.provinceId || null }),
         ...(body.cityId !== undefined && { cityId: body.cityId || null }),

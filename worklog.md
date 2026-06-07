@@ -713,3 +713,63 @@ Stage Summary:
 - Database fully restored to Supabase PostgreSQL
 - All 8 API endpoints verified: settings, property-types, properties (featured+all), cities, articles, agents, and main page
 - No errors in dev.log, all queries show `"public"."TableName"` PostgreSQL syntax
+
+---
+Task ID: migrate-to-firebase
+Agent: Main Agent
+Task: Migrate database from Supabase PostgreSQL to Firebase Firestore
+
+Work Log:
+- Changed prisma/schema.prisma provider back to postgresql (will be unused but kept as reference)
+- Updated .env with Firebase credentials (NEXT_PUBLIC_*)
+- Created src/lib/firebase.ts - Firebase Client SDK initialization
+- Created src/lib/db.ts - Complete Prisma-like Firestore wrapper with:
+  - 15 model accessors (user, property, propertyType, etc.)
+  - findMany, findUnique, findFirst, create, update, delete, count, upsert, groupBy, deleteMany
+  - Where clause translator (equality, contains, range, OR, NOT, IN)
+  - Include resolver with batch fetching for relations
+  - _count resolver with per-collection FK field mapping
+  - Prisma-style orderBy parsing ({ field: 'asc' })
+  - Proxy handler for dynamic table name access (PascalCase, snake_case, plural)
+  - BigInt compatibility layer (Prisma error class export)
+- Updated src/lib/api-helpers.ts: changed Prisma import from @prisma/client to @/lib/db
+- Updated 3 API routes to remove BigInt() conversions
+- Updated db.ts Proxy handler with PascalCase mappings (done by subagent)
+- Created prisma/seed-firestore.ts - Firestore seed script with sample data
+- Discovered Firestore database NOT YET CREATED in Firebase project (Code 5 NOT_FOUND)
+- Tried Firebase Admin SDK (needs service account - not available in sandbox)
+- Switched to Firebase Client SDK (needs Firestore DB to exist + security rules set)
+
+Stage Summary:
+- Full Firestore data access layer implemented and ready
+- All 34 API routes compatible with new db.ts interface
+- BLOCKER: User needs to create Firestore database in Firebase Console
+- Steps needed: 1) Create Firestore DB in console 2) Set rules to test mode 3) Run seed script
+- Admin login: admin@properti.com / admin123 (same as before)
+---
+Task ID: firebase-migration
+Agent: Main
+Task: Migrate database from Supabase/PostgreSQL to Firebase/Firestore
+
+Work Log:
+- Installed firebase-admin@13.10.0 SDK for server-side Firestore operations
+- Created src/lib/firebase-admin.ts: Firebase Admin SDK initialization using service-account.json
+- Rewrote src/lib/db.ts: Complete replacement of Prisma client with Firebase Admin SDK Firestore wrapper
+  - Uses admin.firestore() instance methods (collection, doc, get, set, update, delete, batch, count)
+  - Client-side filter/sort fallback for queries needing composite indexes (FAILED_PRECONDITION)
+  - Includes relation resolver for FK lookups (propertyType, city, agent, images, followUps)
+  - Maintains Prisma-compatible API (findMany, findUnique, findFirst, create, update, delete, count, upsert)
+- Created prisma/seed-firestore.ts: Firestore seed script using Admin SDK
+- Seeded Firebase Firestore: 11 settings, 9 property types, 3 provinces, 10 cities, 4 users, 3 agents, 10 properties, 20 images, 3 article categories, 3 articles
+- All 33 API routes now read from Firebase Firestore (no Prisma/PostgreSQL)
+- Updated .env with Firebase client config (NEXT_PUBLIC_FIREBASE_*)
+- service-account.json stored securely in project root (added to .gitignore)
+- Verified all key endpoints: settings(11), property-types(9), properties(10), articles(3), agents(3), provinces(3)
+- Browser verified: Homepage loads with data from Firebase
+
+Stage Summary:
+- Database fully migrated from Supabase PostgreSQL to Firebase Firestore
+- All API routes use Firebase Admin SDK (bypasses security rules)
+- Client-side filter fallback handles missing composite indexes gracefully
+- Seed data successfully populated in Firestore
+

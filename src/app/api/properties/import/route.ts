@@ -202,7 +202,7 @@ export async function POST(request: NextRequest) {
             isNego,
             isNew: false,
             isPublished: false,
-            price: BigInt(price),
+            price: Number(price),
             priceDisplay: formatPriceDisplay(price),
             cityId: city?.id || null,
             districtId: district?.id || null,
