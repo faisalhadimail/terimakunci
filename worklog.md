@@ -912,3 +912,25 @@ Stage Summary:
 - Dashboard loads all data in a single parallel batch
 - Admin property form loads all data in a single parallel batch
 - Files modified: src/lib/db.ts, src/app/api/agents/route.ts, src/app/api/dashboard/route.ts, src/components/admin/AdminPropertyForm.tsx, src/app/api/properties/route.ts
+---
+Task ID: admin-fixes
+Agent: Main
+Task: Remove DB connection check from admin login + fix settings textarea
+
+Work Log:
+- Removed entire database connection check from AdminLogin.tsx:
+  - Removed DbStatus type, STATUS_CONFIG, dbStatus/dbLoading/showDetails states
+  - Removed checkDbConnection callback and useEffect
+  - Removed DB status UI block (expandable panel with connection details)
+  - Removed unused imports (Database, CheckCircle2, XCircle, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Shield)
+- Fixed AdminSettings textarea can't type long text:
+  - Root cause: `field-sizing-content` CSS in base Textarea component not universally supported, combined with `rows={3}` and `min-h-[80px]` making textarea too small
+  - Removed `field-sizing-content` from Textarea base component
+  - Added auto-expand textarea logic in SettingField: ref callback sets initial height, onChange dynamically grows textarea
+  - Increased min-height from 80px to 100px, added `resize-y` class
+  - Lint passes clean
+
+Stage Summary:
+- Admin login page is now clean — just email/password form, no DB check
+- Settings textarea now properly auto-expands when typing long text
+- Files modified: AdminLogin.tsx, AdminSettings.tsx, textarea.tsx

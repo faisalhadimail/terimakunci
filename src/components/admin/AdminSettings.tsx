@@ -455,16 +455,31 @@ export default function AdminSettings() {
     finally { setDeleteLoading(false); }
   };
 
-  const SettingField = ({ settingKey, label, type = 'text', placeholder = '' }: { settingKey: string; label: string; type?: string; placeholder?: string }) => (
+  const SettingField = ({ settingKey, label, type = 'text', placeholder = '' }: { settingKey: string; label: string; type?: string; placeholder?: string }) => {
+    const textareaRef = (el: HTMLTextAreaElement | null) => {
+      if (el) {
+        el.style.height = 'auto';
+        el.style.height = Math.max(100, el.scrollHeight) + 'px';
+      }
+    };
+    return (
     <div className="space-y-2">
       <Label htmlFor={settingKey} className="text-sm font-medium">{label}</Label>
       {type === 'textarea' ? (
-        <Textarea id={settingKey} value={getValue(settingKey)} onChange={(e) => updateValue(settingKey, e.target.value)} placeholder={placeholder} rows={3} className="min-h-[80px]" />
+        <Textarea
+          id={settingKey}
+          ref={textareaRef}
+          value={getValue(settingKey)}
+          onChange={(e) => { updateValue(settingKey, e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.max(100, e.target.scrollHeight) + 'px'; }}
+          placeholder={placeholder}
+          className="min-h-[100px] resize-y"
+        />
       ) : (
         <Input id={settingKey} type={type} value={getValue(settingKey)} onChange={(e) => updateValue(settingKey, e.target.value)} placeholder={placeholder} className="h-10" />
       )}
     </div>
-  );
+    );
+  };
 
   const SaveGroupButton = ({ group }: { group: string }) => (
     <Button onClick={() => handleSave(group)} disabled={saving} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
