@@ -11,10 +11,10 @@ export async function GET(request: NextRequest) {
   try {
     // Load reference data
     const [propertyTypes, cities, districts, agents] = await Promise.all([
-      db.propertyType.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' }, select: { name: true } }),
-      db.city.findMany({ orderBy: { name: 'asc' }, select: { name: true } }),
-      db.district.findMany({ orderBy: { name: 'asc' }, select: { name: true, city: { select: { name: true } } } }),
-      db.agentProfile.findMany({ where: { isActive: true }, orderBy: { name: 'asc' }, select: { name: true } }),
+      db.propertyType.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
+      db.city.findMany({ orderBy: { name: 'asc' } }),
+      db.district.findMany({ orderBy: { name: 'asc' }, include: { city: { select: { name: true } } } }),
+      db.agentProfile.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
     ])
 
     const wb = XLSX.utils.book_new()
@@ -210,16 +210,16 @@ export async function GET(request: NextRequest) {
       ['DATA REFERENSI'],
       [''],
       ['--- Jenis Properti ---'],
-      ...propertyTypes.map((t) => [t.name]),
+      ...propertyTypes.map((t: any) => [t.name]),
       [''],
       ['--- Kabupaten/Kota ---'],
-      ...cities.map((c) => [c.name]),
+      ...cities.map((c: any) => [c.name]),
       [''],
       ['--- Kecamatan (Nama Kecamatan — Kota/Kabupaten) ---'],
-      ...districts.map((d) => [`${d.name} — ${d.city.name}`]),
+      ...districts.map((d: any) => [`${d.name} — ${d.city?.name || '?'}`]),
       [''],
       ['--- Agen ---'],
-      ...agents.map((a) => [a.name]),
+      ...agents.map((a: any) => [a.name || '?']),
       [''],
       ['--- Nilai Status ---'],
       ['dijual'],

@@ -115,13 +115,13 @@ export async function POST(request: NextRequest) {
       db.propertyType.findMany(),
       db.city.findMany(),
       db.district.findMany(),
-      db.agentProfile.findMany({ include: { user: { select: { id: true, name: true } } } }),
+      db.agentProfile.findMany(),
     ])
 
     const typeMap = new Map(propertyTypes.map((t) => [t.name.toLowerCase(), t]))
     const cityMap = new Map(cities.map((c) => [c.name.toLowerCase(), c]))
     const districtMap = new Map(districts.map((d) => [d.name.toLowerCase(), d]))
-    const agentMap = new Map(agents.map((a) => [a.name.toLowerCase(), a]))
+    const agentMap = new Map(agents.map((a) => [(a as any).name?.toLowerCase() || '', a]))
 
     // Process rows
     let imported = 0
@@ -222,7 +222,7 @@ export async function POST(request: NextRequest) {
             mainImage: String(normalized['gambar utama (url)'] || normalized['gambar utama'] || ''),
             videoUrl: String(normalized['video url'] || ''),
             virtualTourUrl: String(normalized['virtual tour url'] || ''),
-            agentId: agent?.user.id || null,
+            agentId: (agent as any)?.userId || null,
             metaTitle: String(normalized['meta title'] || ''),
             metaDescription: String(normalized['meta description'] || ''),
             metaKeywords: String(normalized['meta keywords'] || ''),

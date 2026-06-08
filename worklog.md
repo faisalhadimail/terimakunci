@@ -1127,3 +1127,44 @@ Stage Summary:
 - 4 new route files created: cities/[id], districts/[id], agents/[id]
 - 2 files with POST handlers added: cities/route.ts, agents/route.ts
 - All CRUD operations verified working for Lokasi, Agen, and Artikel
+
+---
+Task ID: 17
+Agent: Main Orchestrator
+Task: Fix Lokasi and Properti bulk upload/download features
+
+Work Log:
+- Investigated missing API routes for Lokasi management
+- Created 4 new location API routes:
+  1. GET /api/locations/template - Download Excel template for bulk location import (3 sheets: Template, Panduan, Data Referensi)
+  2. POST /api/locations/import - Bulk import locations from Excel (auto-creates cities/districts, deduplication)
+  3. PUT /api/locations/cities/[id] - Update city name with auto-slug regeneration
+  4. DELETE /api/locations/cities/[id] - Delete city with safety checks (has districts/properties?)
+  5. PUT /api/locations/districts/[id] - Update district name with auto-slug regeneration
+  6. DELETE /api/locations/districts/[id] - Delete district with safety checks (has properties?)
+- Created 2 new property API routes:
+  1. POST /api/properties/bulk - Bulk actions (publish/unpublish/delete)
+  2. POST /api/properties/[id]/duplicate - Duplicate property with new code/slug
+- Fixed property template route (GET /api/properties/template 500→200):
+  - Removed unsupported `select` option from findMany queries
+  - Changed agent ordering from `name` to `sortOrder` to match available indexes
+  - Added null-safe access for district.city.name
+- Fixed property import route agent lookup:
+  - Changed from `agent?.user.id` (nested include) to `(agent as any)?.userId` (direct field)
+  - Removed nested `include: { user: ... }` from agentProfile.findMany
+  - Added null-safe agent name mapping
+
+Verification (Agent Browser):
+- Lokasi page loads with cities data ✓
+- Download Template for Lokasi: GET /api/locations/template 200 ✓
+- Add city: POST /api/locations/cities 201 ✓
+- Edit city: PUT /api/locations/cities/{id} 200 ✓
+- Property template download: GET /api/properties/template 200 ✓ (was 500, now fixed)
+- Lint passes clean ✓
+
+Stage Summary:
+- 6 new API routes created for Lokasi CRUD + template/import
+- 2 new API routes created for Property bulk actions + duplicate
+- Property template 500 error fixed (select option not supported by db model)
+- Property import agent lookup fixed (removed nested include)
+- All location management (add/edit/delete) now fully functional
