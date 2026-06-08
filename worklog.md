@@ -816,3 +816,57 @@ Stage Summary:
 - Login now returns "Database belum diinisialisasi" hint if no users exist
 - User must call POST /api/setup on their Vercel deployment after setting FIREBASE_SERVICE_ACCOUNT_KEY
 
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix Firebase connection and add database status indicator to admin login page
+
+Work Log:
+- Diagnosed that Firebase Admin SDK cannot connect without service account key (gets "Could not load the default credentials" error)
+- Discovered that Firestore REST API works with just the API key (NEXT_PUBLIC_FIREBASE_API_KEY) since security rules allow unauthenticated access
+- Rewrote src/lib/db.ts to use Firestore REST API instead of Firebase Admin SDK
+  - Replaced getAdminDb() with REST API functions (restGet, restQuery, restCreate, restUpdate, restDelete, restQueryCount)
+  - Fixed REST API endpoint format: documents:runQuery (not documents/{collection}:runQuery)
+  - Fixed aggregation query format with parent parameter
+  - Fixed updateMask.fieldPaths to use repeated query parameters instead of comma-separated string
+  - Fixed apiUrl() to support string[] params for repeated query parameters
+- Created /api/setup/route.ts endpoint for database connection diagnostics (GET) and admin seeding (POST)
+- Fixed AdminLogin.tsx to correctly parse API response (data.data || data instead of just data.data)
+- Updated AdminLogin instructions for Firebase setup to reflect API key approach
+- Updated admin user password hash in Firestore (old hash didn't match "admin123")
+- Removed firebase-admin from serverExternalPackages in next.config.ts
+
+Stage Summary:
+- Database connection: WORKING via Firestore REST API with API key
+- Admin login: WORKING with admin@properti.com / admin123
+- DB status indicator on login page: WORKING - shows green "Terhubung" with user count
+- All API routes use REST API now (no Admin SDK dependency)
+- No service account key needed - only API key from .env
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix property add/edit client-side exception
+
+Work Log:
+- Identified root cause: undefined variable `property` on line 426 of AdminPropertyForm.tsx (should be `currentProperty`)
+- Fixed AdminPropertyForm.tsx: changed `property?.facilities` to `currentProperty?.facilities`
+- Fixed restCreate in db.ts: wrong URL format for document creation with specific ID
+  - Was: `/documents/{collection}/{docId}?documentId={docId}` 
+  - Fixed to: `/documents/{collection}?documentId={docId}`
+- Fixed resolveIncludes FK resolution: was using __name__ filter with raw IDs (broken)
+  - Changed to fetch individual documents by ID using restGet (reliable)
+- Fixed resolveCounts: was iterating over `{ select: { ... } }` wrapper instead of actual count keys
+  - Added `select` unwrapping: `if (countSpec.select) countFields = countSpec.select`
+- Fixed null filter handling in Firestore REST API: `deletedAt: null` silently excluded docs without the field
+  - Changed whereToRestFilters to skip null equality filters and handle them client-side
+- Fixed jsToRestValue(null): was returning raw null, now returns `{ nullValue: 'NULL_VALUE' }`
+- Fixed composite index issue: Firestore REST API silently truncates results when both where+orderBy need composite index
+  - Added client-side sorting fallback when where+orderBy are both present
+- Fixed apiUrl() to support array values for repeated query params (updateMask.fieldPaths)
+
+Stage Summary:
+- Property form: LOADING without errors
+- All dropdowns populated: 9 property types, 10 cities, 3 agents
+- Property creation: WORKING (tested via API)
+- Property listing: WORKING (77 properties)
+- No more client-side exceptions on property pages

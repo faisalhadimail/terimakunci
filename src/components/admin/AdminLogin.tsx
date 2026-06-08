@@ -84,9 +84,11 @@ export default function AdminLogin() {
     setDbLoading(true);
     try {
       const res = await fetch('/api/setup');
-      const json = await res.json();
-      if (json.data) {
-        setDbStatus(json.data as DbStatus);
+      const data = await res.json();
+      // API returns data directly (not wrapped in { data: ... })
+      const status = data.data || data;
+      if (status?.status) {
+        setDbStatus(status as DbStatus);
       }
     } catch {
       setDbStatus({
@@ -213,12 +215,11 @@ export default function AdminLogin() {
                       <span>Cara menghubungkan Firebase:</span>
                     </div>
                     <ol className="space-y-1 pl-4 list-decimal text-muted-foreground">
-                      <li>Buka <strong>Firebase Console</strong> → Project Settings → <strong>Service Accounts</strong></li>
-                      <li>Klik <strong>Generate New Private Key</strong></li>
-                      <li>Copy <strong>seluruh isi file JSON</strong></li>
-                      <li>Di Vercel: <strong>Settings → Environment Variables</strong></li>
-                      <li>Tambah <code className="bg-red-100 dark:bg-red-900/50 px-1 rounded text-[11px] font-mono">FIREBASE_SERVICE_ACCOUNT_KEY</code> dengan isi JSON</li>
-                      <li><strong>Redeploy</strong> di Vercel</li>
+                      <li>Buka <strong>Firebase Console</strong> → Project Settings → <strong>General</strong></li>
+                      <li>Copy <strong>Web API Key</strong> (apiKey)</li>
+                      <li>Set <code className="bg-red-100 dark:bg-red-900/50 px-1 rounded text-[11px] font-mono">NEXT_PUBLIC_FIREBASE_API_KEY</code> di file <code>.env</code></li>
+                      <li>Set <code className="bg-red-100 dark:bg-red-900/50 px-1 rounded text-[11px] font-mono">NEXT_PUBLIC_FIREBASE_PROJECT_ID</code> di file <code>.env</code></li>
+                      <li>Restart server</li>
                     </ol>
                   </div>
                 )}

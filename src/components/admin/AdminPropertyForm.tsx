@@ -423,7 +423,7 @@ export default function AdminPropertyForm() {
                   ))}
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
                     <Checkbox
-                      checked={!!property?.facilities}
+                      checked={!!currentProperty?.facilities}
                       disabled
                       className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
                     />

@@ -1,59 +1,301 @@
-import {
-  Timestamp,
-  FieldValue,
-  FieldPath,
-  Filter,
-  Query,
-  DocumentSnapshot,
-  CollectionReference,
-  DocumentReference,
-} from 'firebase-admin/firestore'
-import { initializeApp, cert, getApp, type App } from 'firebase-admin/app'
-import { getFirestore, type Firestore } from 'firebase-admin/firestore'
+// ─── Firestore REST API Client ────────────────────────────────────────
+// Uses the Firebase REST API with API key — no service account needed.
 
-// ─── Firebase Admin SDK singleton (inlined — no external dependency) ───
-let _dbInstance: Firestore | null = null
+const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'terimakunci-7bf84'
+const API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
+const BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)`
 
-function getAdminDb(): Firestore {
-  if (_dbInstance) return _dbInstance
-
-  let app: App
-  try {
-    app = getApp()
-  } catch {
-    // 1. Service account JSON from env var (recommended for Vercel)
-    const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY
-    if (saJson) {
-      try {
-        app = initializeApp({ credential: cert(JSON.parse(saJson)) })
-      } catch (err) {
-        throw new Error(
-          `[firebase-admin] Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY: ${err instanceof Error ? err.message : err}`
-        )
-      }
+function apiUrl(path: string, params?: Record<string, string | string[]>): string {
+  const sp = new URLSearchParams()
+  if (API_KEY) sp.set('key', API_KEY)
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (Array.isArray(v)) v.forEach(item => sp.append(k, item))
+      else if (v !== undefined) sp.set(k, v)
     }
-    // 2. Google Application Default Credentials
-    else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      app = initializeApp()
+  }
+  const qs = sp.toString()
+  return `${BASE_URL}${path}${qs ? '?' + qs : ''}`
+}
+
+// ─── Value conversion helpers ─────────────────────────────────────────
+function jsToRestValue(v: any): any {
+  if (v === null || v === undefined) return { nullValue: 'NULL_VALUE' }
+  if (v instanceof Date) return { timestampValue: v.toISOString() }
+  if (typeof v === 'boolean') return { booleanValue: v }
+  if (typeof v === 'number' || typeof v === 'bigint') return { integerValue: Number(v) }
+  if (typeof v === 'string') return { stringValue: v }
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(jsToRestValue).filter((x: any) => x !== null) } }
+  if (typeof v === 'object') {
+    const map: Record<string, any> = {}
+    for (const [k, val] of Object.entries(v)) {
+      if (val !== undefined && val !== null) map[k] = jsToRestValue(val)
     }
-    // 3. Project ID only (works when ADC available, e.g. Cloud Run / Vercel)
-    else {
-      const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
-      if (!projectId) {
-        throw new Error(
-          '[firebase-admin] No credentials. Set FIREBASE_SERVICE_ACCOUNT_KEY or GOOGLE_APPLICATION_CREDENTIALS.'
-        )
+    return { mapValue: { fields: map } }
+  }
+  return { stringValue: String(v) }
+}
+
+function restValueToJs(v: any): any {
+  if (!v || typeof v !== 'object') return v
+  if ('stringValue' in v) return v.stringValue
+  if ('booleanValue' in v) return v.booleanValue
+  if ('integerValue' in v) return Number(v.integerValue)
+  if ('doubleValue' in v) return Number(v.doubleValue)
+  if ('timestampValue' in v) return new Date(v.timestampValue)
+  if ('nullValue' in v) return null
+  if ('arrayValue' in v) return (v.arrayValue?.values || []).map(restValueToJs)
+  if ('mapValue' in v) {
+    const obj: Record<string, any> = {}
+    for (const [k, val] of Object.entries(v.mapValue?.fields || {})) {
+      obj[k] = restValueToJs(val)
+    }
+    return obj
+  }
+  if ('referenceValue' in v) return v.referenceValue
+  if ('geoPointValue' in v) return v.geoPointValue
+  return v
+}
+
+function restDocToObj(doc: { name: string; fields?: Record<string, any> }): Record<string, any> | null {
+  if (!doc?.fields) return null
+  const id = doc.name.split('/').pop() || ''
+  const obj: Record<string, any> = { id }
+  for (const [k, v] of Object.entries(doc.fields)) {
+    obj[k] = restValueToJs(v)
+  }
+  return obj
+}
+
+// ─── REST API methods ────────────────────────────────────────────────
+
+function firelog(label: string, err: any) {
+  const msg = err?.message || err?.toString?.() || String(err)
+  console.error(`[Firestore:${label}] ${msg}`)
+}
+
+async function restGet(collection: string, docId: string): Promise<Record<string, any> | null> {
+  const res = await fetch(apiUrl(`/documents/${collection}/${docId}`))
+  if (res.status === 404) return null
+  const data = await res.json()
+  if (data.error) throw new Error(data.error.message)
+  return restDocToObj(data)
+}
+
+interface RestQueryOptions {
+  where?: Array<{ field: string; op: string; value: any }>
+  orderBy?: Array<{ field: string; direction: string }>
+  limit?: number
+  offset?: number
+  select?: string[]
+}
+
+async function restQuery(collection: string, options?: RestQueryOptions): Promise<{ docs: Record<string, any>[], totalCount?: number }> {
+  const structuredQuery: any = { from: [{ collectionId: collection }] }
+
+  if (options?.where && options.where.length > 0) {
+    if (options.where.length === 1) {
+      structuredQuery.where = {
+        fieldFilter: {
+          field: { fieldPath: options.where[0].field },
+          op: options.where[0].op,
+          value: jsToRestValue(options.where[0].value),
+        }
       }
-      app = initializeApp({ projectId })
+    } else {
+      structuredQuery.where = {
+        compositeFilter: {
+          op: 'AND',
+          filters: options.where.map(w => ({
+            fieldFilter: {
+              field: { fieldPath: w.field },
+              op: w.op,
+              value: jsToRestValue(w.value),
+            }
+          }))
+        }
+      }
     }
   }
 
-  _dbInstance = getFirestore(app)
-  return _dbInstance
+  if (options?.orderBy) {
+    structuredQuery.orderBy = options.orderBy.map(o => ({
+      field: { fieldPath: o.field },
+      direction: o.direction || 'ASCENDING',
+    }))
+  }
+
+  if (options?.offset) structuredQuery.offset = options.offset
+  if (options?.limit) structuredQuery.limit = options.limit
+
+  // Firestore REST API silently truncates results when composite index is missing
+  // for equality+inequality queries. To be safe, always sort client-side when both
+  // where and orderBy are present.
+  if (options?.where && options.where.length > 0 && options?.orderBy && options.orderBy.length > 0) {
+    // Query without orderBy (avoids composite index requirement)
+    const safeQuery = { ...structuredQuery }
+    delete safeQuery.orderBy
+    const safeRes = await fetch(apiUrl(`/documents:runQuery`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ structuredQuery: safeQuery }),
+    })
+    const safeData = await safeRes.json()
+    if (safeData.error) throw new Error(safeData.error.message)
+
+    const docs = (safeData || [])
+      .filter((item: any) => item.document)
+      .map((item: any) => restDocToObj(item.document)!)
+      .filter(Boolean)
+
+    // Sort client-side
+    const sortedDocs = sortDocsClientSide(docs, options.orderBy.map(o => ({ [o.field]: o.direction === 'DESCENDING' ? 'desc' : 'asc' })))
+
+    // Apply limit/offset after sorting
+    const skipCount = options?.offset || 0
+    const limitedDocs = skipCount > 0 ? sortedDocs.slice(skipCount) : sortedDocs
+    const finalDocs = options?.limit ? limitedDocs.slice(0, options.limit) : limitedDocs
+
+    return { docs: finalDocs }
+  }
+
+  const res = await fetch(apiUrl(`/documents:runQuery`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ structuredQuery }),
+  })
+
+  const data = await res.json()
+  if (data.error) {
+    if (data.error.code === 400 && options?.orderBy) {
+      const { docs: fallbackDocs } = await restQuery(collection, {
+        where: options.where,
+        limit: options.limit,
+        offset: options.offset,
+      })
+      return { docs: sortDocsClientSide(fallbackDocs, options.orderBy.map(o => ({ [o.field]: o.direction === 'DESCENDING' ? 'desc' : 'asc' }))) }
+    }
+    throw new Error(data.error.message)
+  }
+
+  const docs = (data || [])
+    .filter((item: any) => item.document)
+    .map((item: any) => restDocToObj(item.document)!)
+    .filter(Boolean)
+
+  return { docs }
 }
 
-type AdminFirestore = ReturnType<typeof getAdminDb>
-type DocData = { [key: string]: any }
+async function restQueryCount(collection: string, options?: RestQueryOptions): Promise<number> {
+  try {
+    // Build where clause for structuredAggregationQuery
+    let whereClause: any = {}
+    if (options?.where && options.where.length > 0) {
+      if (options.where.length === 1) {
+        whereClause = {
+          fieldFilter: {
+            field: { fieldPath: options.where[0].field },
+            op: options.where[0].op,
+            value: jsToRestValue(options.where[0].value),
+          }
+        }
+      } else {
+        whereClause = {
+          compositeFilter: {
+            op: 'AND',
+            filters: options.where.map(w => ({
+              fieldFilter: {
+                field: { fieldPath: w.field },
+                op: w.op,
+                value: jsToRestValue(w.value),
+              }
+            }))
+          }
+        }
+      }
+    }
+
+    const parent = `projects/${PROJECT_ID}/databases/(default)/documents/${collection}`
+    const body: any = {
+      structuredAggregationQuery: {
+        ...(Object.keys(whereClause).length > 0 ? { where: whereClause } : {}),
+        aggregations: [{ alias: 'count', count: {} }]
+      },
+      parent,
+    }
+
+    const res = await fetch(apiUrl(`/documents:runAggregationQuery`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (data.error) throw new Error(data.error.message)
+    return Number(data?.[0]?.result?.aggregateFields?.count?.integerValue || data?.result?.aggregateFields?.count?.integerValue || 0)
+  } catch {
+    // Fallback: use findMany and count
+    try {
+      const { docs } = await restQuery(collection, {
+        where: options?.where,
+        limit: options?.limit,
+      })
+      return docs.length
+    } catch {
+      return 0
+    }
+  }
+}
+
+async function restCreate(collection: string, data: Record<string, any>, docId?: string): Promise<Record<string, any>> {
+  const fields: Record<string, any> = {}
+  for (const [k, v] of Object.entries(data)) {
+    if (v !== undefined) fields[k] = jsToRestValue(v)
+  }
+
+  let url: string
+  if (docId) {
+    url = apiUrl(`/documents/${collection}`, { documentId: docId })
+  } else {
+    url = apiUrl(`/documents/${collection}`)
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  })
+  const result = await res.json()
+  if (result.error) throw new Error(result.error.message)
+  return restDocToObj(result)!
+}
+
+async function restUpdate(collection: string, docId: string, data: Record<string, any>): Promise<Record<string, any>> {
+  const fields: Record<string, any> = {}
+  for (const [k, v] of Object.entries(data)) {
+    if (v !== undefined) fields[k] = jsToRestValue(v)
+  }
+
+  // REST API update uses PATCH with updateMask (repeated for each field)
+  const fieldPaths = Object.keys(fields)
+  const url = apiUrl(`/documents/${collection}/${docId}`, { 'updateMask.fieldPaths': fieldPaths })
+
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  })
+  const result = await res.json()
+  if (result.error) throw new Error(result.error.message)
+  return restDocToObj(result)!
+}
+
+async function restDelete(collection: string, docId: string): Promise<Record<string, any>> {
+  const res = await fetch(apiUrl(`/documents/${collection}/${docId}`), { method: 'DELETE' })
+  if (res.status === 404) throw new Error('Document not found')
+  const data = await res.json()
+  if (data.error) throw new Error(data.error.message)
+  return { id: docId }
+}
 
 // ─── Helpers ────────────────────────────────────────────────
 function cuid(): string {
@@ -64,39 +306,6 @@ function cuid(): string {
   if (typeof crypto !== 'undefined') crypto.getRandomValues(bytes)
   for (let i = 0; i < len; i++) id += chars[bytes[i] % chars.length]
   return id
-}
-
-function toDate(v: any): any {
-  if (!v) return v
-  if (v instanceof Date) return v
-  if (v instanceof Timestamp) return v.toDate()
-  if (v && typeof v === 'object' && '_seconds' in v) {
-    return new Date(v._seconds * 1000 + (v._nanoseconds || 0) / 1e6)
-  }
-  return v
-}
-
-function toFirestoreData(data: Record<string, any>): DocData {
-  const out: DocData = {}
-  for (const [k, v] of Object.entries(data)) {
-    if (v === undefined) continue
-    out[k] = v
-  }
-  return out
-}
-
-function fromFirestoreDoc(snap: DocumentSnapshot): Record<string, any> | null {
-  if (!snap.exists) return null
-  const data = snap.data()!
-  const obj: Record<string, any> = { id: snap.id }
-  for (const [k, v] of Object.entries(data)) {
-    obj[k] = toDate(v)
-  }
-  return obj
-}
-
-function getDb(): AdminFirestore {
-  return getAdminDb()
 }
 
 // ─── Client-side filter/sort fallback ────────────────────
@@ -170,66 +379,49 @@ function sortDocsClientSide(docs: Record<string, any>[], orderBy: any): Record<s
   })
 }
 
-// ─── Query builder using chained .where() ──────────────────
-function buildQuery(
-  collectionRef: CollectionReference,
-  options: { where?: Record<string, any>; orderBy?: any; skip?: number; take?: number }
-): Query {
-  const { where: whereClause = {}, orderBy: orderByOpt, skip, take } = options
-
-  const filters: { field: string; op: string; value: any }[] = []
+// ─── Convert Prisma-style where clause to REST API filters ───
+// Note: null equality filters are skipped for REST API because Firestore REST
+// doesn't match documents where the field is missing (only where it's explicitly null).
+// These are handled via client-side filtering instead.
+function whereToRestFilters(whereClause: Record<string, any>): { filters: Array<{ field: string; op: string; value: any }>, hasNullFilter: boolean } {
+  const filters: Array<{ field: string; op: string; value: any }> = []
+  let hasNullFilter = false
 
   for (const [key, val] of Object.entries(whereClause)) {
     if (key === 'OR' || key === 'AND' || key === 'NOT') continue
     if (val === null) {
-      filters.push({ field: key, op: '==', value: null })
+      // Skip null filters for REST API — handled client-side
+      hasNullFilter = true
+      continue
     } else if (Array.isArray(val)) {
-      if (val.length > 0) filters.push({ field: key, op: 'in', value: val })
+      if (val.length > 0) filters.push({ field: key, op: 'IN', value: val })
     } else if (typeof val === 'object' && !(val instanceof Date)) {
-      if ('equals' in val) filters.push({ field: key, op: '==', value: val.equals })
-      if ('contains' in val) {
-        filters.push({ field: key, op: '>=', value: val.contains })
-        filters.push({ field: key, op: '<=', value: val.contains + '\uf8ff' })
-      }
-      if ('startsWith' in val) {
-        filters.push({ field: key, op: '>=', value: val.startsWith })
-        filters.push({ field: key, op: '<=', value: val.startsWith + '\uf8ff' })
-      }
-      if ('gt' in val) filters.push({ field: key, op: '>', value: val.gt })
-      if ('gte' in val) filters.push({ field: key, op: '>=', value: val.gte })
-      if ('lt' in val) filters.push({ field: key, op: '<', value: val.lt })
-      if ('lte' in val) filters.push({ field: key, op: '<=', value: val.lte })
-      if ('in' in val && Array.isArray(val.in)) filters.push({ field: key, op: 'in', value: val.in })
-      if ('notIn' in val && Array.isArray(val.notIn)) filters.push({ field: key, op: 'not-in', value: val.notIn })
+      if ('equals' in val) filters.push({ field: key, op: 'EQUAL', value: val.equals })
+      if ('gt' in val) filters.push({ field: key, op: 'GREATER_THAN', value: val.gt })
+      if ('gte' in val) filters.push({ field: key, op: 'GREATER_THAN_OR_EQUAL', value: val.gte })
+      if ('lt' in val) filters.push({ field: key, op: 'LESS_THAN', value: val.lt })
+      if ('lte' in val) filters.push({ field: key, op: 'LESS_THAN_OR_EQUAL', value: val.lte })
+      if ('in' in val && Array.isArray(val.in)) filters.push({ field: key, op: 'IN', value: val.in })
+      if ('notIn' in val && Array.isArray(val.notIn)) filters.push({ field: key, op: 'NOT_IN', value: val.notIn })
     } else {
-      filters.push({ field: key, op: '==', value: val })
+      filters.push({ field: key, op: 'EQUAL', value: val })
     }
   }
 
-  let q: Query = collectionRef
-  for (const f of filters) {
-    q = q.where(f.field, f.op as any, f.value)
-  }
+  return { filters, hasNullFilter }
+}
 
-  if (orderByOpt) {
-    const obs = Array.isArray(orderByOpt) ? orderByOpt : [orderByOpt]
-    for (const o of obs) {
-      let field: string
-      let dir: 'asc' | 'desc'
-      if (typeof o === 'string') { field = o; dir = 'asc' }
-      else if (typeof o === 'object' && o !== null) {
-        const entries = Object.entries(o)
-        const [f, d] = entries[0]
-        field = f; dir = (d === 'desc') ? 'desc' : 'asc'
-      } else { continue }
-      q = q.orderBy(field, dir)
+function orderByToRest(orderByOpt: any): Array<{ field: string; direction: string }> {
+  if (!orderByOpt) return []
+  const obs = Array.isArray(orderByOpt) ? orderByOpt : [orderByOpt]
+  return obs.map(o => {
+    if (typeof o === 'string') return { field: o, direction: 'ASCENDING' }
+    if (typeof o === 'object' && o !== null) {
+      const [f, d] = Object.entries(o)[0]
+      return { field: f, direction: d === 'desc' ? 'DESCENDING' : 'ASCENDING' }
     }
-  }
-
-  const effectiveTake = take && skip ? take + skip : take
-  if (effectiveTake) q = q.limit(effectiveTake)
-
-  return q
+    return { field: String(o), direction: 'ASCENDING' }
+  })
 }
 
 // ─── Include resolver ──────────────────────────────────────
@@ -239,7 +431,6 @@ async function resolveIncludes(
   collectionName: string
 ): Promise<void> {
   if (!include || docs.length === 0) return
-  const fs = getDb()
 
   for (const [relKey, relOpt] of Object.entries(include)) {
     if (relKey === '_count') {
@@ -254,8 +445,10 @@ async function resolveIncludes(
       let allImages: Record<string, any>[] = []
       for (let i = 0; i < ids.length; i += 30) {
         const batch = ids.slice(i, i + 30)
-        const snap = await fs.collection('propertyImages').where('propertyId', 'in', batch).get()
-        snap.forEach(s => { const d = fromFirestoreDoc(s); if (d) allImages.push(d) })
+        const { docs: batchDocs } = await restQuery('propertyImages', {
+          where: [{ field: 'propertyId', op: 'IN', value: batch }]
+        })
+        allImages.push(...batchDocs)
       }
       allImages.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
       const imgMap = new Map<string, Record<string, any>[]>()
@@ -279,8 +472,10 @@ async function resolveIncludes(
       let allAP: Record<string, any>[] = []
       for (let i = 0; i < ids.length; i += 30) {
         const batch = ids.slice(i, i + 30)
-        const snap = await fs.collection('agentProfiles').where('userId', 'in', batch).get()
-        snap.forEach(s => { const d = fromFirestoreDoc(s); if (d) allAP.push(d) })
+        const { docs: batchDocs } = await restQuery('agentProfiles', {
+          where: [{ field: 'userId', op: 'IN', value: batch }]
+        })
+        allAP.push(...batchDocs)
       }
       const apMap = new Map(allAP.map(d => [d.userId, d]))
       for (const doc of docs) doc.agentProfile = apMap.get(doc.id) || null
@@ -294,8 +489,10 @@ async function resolveIncludes(
       let allFU: Record<string, any>[] = []
       for (let i = 0; i < ids.length; i += 30) {
         const batch = ids.slice(i, i + 30)
-        const snap = await fs.collection('leadFollowUps').where('leadId', 'in', batch).get()
-        snap.forEach(s => { const d = fromFirestoreDoc(s); if (d) allFU.push(d) })
+        const { docs: batchDocs } = await restQuery('leadFollowUps', {
+          where: [{ field: 'leadId', op: 'IN', value: batch }]
+        })
+        allFU.push(...batchDocs)
       }
       allFU.sort((a, b) => {
         const da = a.createdAt instanceof Date ? a.createdAt.getTime() : 0
@@ -322,11 +519,13 @@ async function resolveIncludes(
     const relCollection = relationToCollection(relKey)
     if (!relCollection) continue
 
+    // Fetch related docs by their IDs (REST API can't query by __name__ easily)
     let relDocs: Record<string, any>[] = []
-    for (let i = 0; i < ids.length; i += 30) {
-      const batch = ids.slice(i, i + 30)
-      const snap = await fs.collection(relCollection).where(FieldPath.documentId(), 'in', batch).get()
-      snap.forEach(s => { const d = fromFirestoreDoc(s); if (d) relDocs.push(d) })
+    for (const id of ids) {
+      try {
+        const doc = await restGet(relCollection, id)
+        if (doc) relDocs.push(doc)
+      } catch { /* skip missing docs */ }
     }
     const lookup = new Map(relDocs.map(d => [d.id, d]))
     for (const doc of docs) {
@@ -342,11 +541,16 @@ async function resolveCounts(
   parentCollection: string
 ): Promise<void> {
   if (!countSpec || docs.length === 0) return
-  const fs = getDb()
+
+  // Handle Prisma's { select: { field: true } } format
+  let countFields = countSpec
+  if (countSpec.select && typeof countSpec.select === 'object') {
+    countFields = countSpec.select
+  }
 
   for (const doc of docs) {
     if (!doc._count) doc._count = {}
-    for (const [countKey] of Object.entries(countSpec)) {
+    for (const [countKey] of Object.entries(countFields)) {
       const countCollection = relationToCollection(countKey)
       if (!countCollection) { doc._count[countKey] = 0; continue }
 
@@ -363,8 +567,10 @@ async function resolveCounts(
       if (countKey === 'leads' && parentCollection === 'users') fkField = 'agentId'
 
       try {
-        const snap = await fs.collection(countCollection).where(fkField, '==', doc.id).count().get()
-        doc._count[countKey] = snap.data().count
+        const cnt = await restQueryCount(countCollection, {
+          where: [{ field: fkField, op: 'EQUAL', value: doc.id }]
+        })
+        doc._count[countKey] = cnt
       } catch { doc._count[countKey] = 0 }
     }
   }
@@ -407,10 +613,6 @@ function createModelAccessors(modelName: string) {
   const collName = COLLECTION_NAMES[modelName] || modelName + 's'
   const uniqueFields = UNIQUE_FIELDS[modelName] || ['id']
 
-  function getCollectionRef(): CollectionReference {
-    return getDb().collection(collName)
-  }
-
   function getUniqueField(w: Record<string, any>): { field: string; value: string } | null {
     for (const f of uniqueFields) if (w[f] !== undefined) return { field: f, value: w[f] }
     if (w.id) return { field: 'id', value: w.id }
@@ -420,34 +622,43 @@ function createModelAccessors(modelName: string) {
   return {
     async findMany(options: { where?: Record<string, any>; orderBy?: any; skip?: number; take?: number; include?: Record<string, any> } = {}): Promise<any[]> {
       try {
-        const q = buildQuery(getCollectionRef(), options)
-        const snap = await q.get()
-        let docs = snap.docs.map(s => fromFirestoreDoc(s)!)
-        if (options.skip) docs = docs.length > options.skip ? docs.slice(options.skip) : []
-        if (options.take && docs.length > options.take) docs = docs.slice(0, options.take)
-        if (options.include) await resolveIncludes(docs, options.include, collName)
-        return docs
-      } catch (error: any) {
-        if (error.message?.includes('FAILED_PRECONDITION') || error.code === 9) {
-          try {
-            const allDocs = await getDb().collection(collName).get()
-            let docs = allDocs.docs.map(s => fromFirestoreDoc(s)!)
-            if (options.where && Object.keys(options.where).length > 0) {
-              docs = filterDocsClientSide(docs, options.where)
-            }
-            if (options.orderBy) {
-              docs = sortDocsClientSide(docs, options.orderBy)
-            }
-            if (options.skip) docs = docs.length > options.skip ? docs.slice(options.skip) : []
-            if (options.take && docs.length > options.take) docs = docs.slice(0, options.take)
-            if (options.include) await resolveIncludes(docs, options.include, collName)
-            return docs
-          } catch (e2: any) {
-            console.error(`[Firestore] findMany fallback ${collName}:`, e2.message)
-            return []
-          }
+        const { where = {}, orderBy: orderByOpt, skip, take } = options
+
+        // Check if we have OR/NOT filters — these aren't supported by REST API directly
+        const hasOrNot = Object.keys(where).some(k => k === 'OR' || k === 'NOT')
+        const hasContains = Object.values(where).some(v =>
+          v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) && ('contains' in v || 'startsWith' in v)
+        )
+
+        // Build REST API filters (exclude OR/NOT/contains/null — handle client-side)
+        const { filters: restFilters, hasNullFilter } = whereToRestFilters(where)
+        const restOrderBy = orderByToRest(orderByOpt)
+
+        // For contains/startsWith, we get all and filter client-side
+        if (hasContains) {
+          restFilters.length = 0
+          restOrderBy.length = 0
         }
-        console.error(`[Firestore] findMany ${collName}:`, error.message)
+
+        const { docs } = await restQuery(collName, {
+          where: restFilters.length > 0 ? restFilters : undefined,
+          orderBy: restOrderBy.length > 0 ? restOrderBy : undefined,
+          limit: take,
+          offset: skip,
+        })
+
+        let result = docs
+        if (hasOrNot || hasContains || hasNullFilter) {
+          result = filterDocsClientSide(result, where)
+        }
+        if (hasContains && orderByOpt) {
+          result = sortDocsClientSide(result, orderByOpt)
+        }
+
+        if (options.include) await resolveIncludes(result, options.include, collName)
+        return result
+      } catch (error: any) {
+        firelog(`findMany ${collName}`, error)
         return []
       }
     },
@@ -457,38 +668,48 @@ function createModelAccessors(modelName: string) {
       if (!unique) return null
       const { field, value } = unique
       try {
+        let doc: Record<string, any> | null = null
         if (field === 'id') {
-          const s = await getDb().collection(collName).doc(value).get()
-          if (!s.exists) return null
-          const d = fromFirestoreDoc(s)!
-          if (options.include) await resolveIncludes([d], options.include, collName)
-          return d
+          doc = await restGet(collName, value)
+        } else {
+          const { docs } = await restQuery(collName, {
+            where: [{ field, op: 'EQUAL', value }],
+            limit: 1,
+          })
+          doc = docs[0] || null
         }
-        const snap = await getDb().collection(collName).where(field, '==', value).limit(1).get()
-        if (snap.empty) return null
-        const d = fromFirestoreDoc(snap.docs[0])!
-        if (options.include) await resolveIncludes([d], options.include, collName)
-        return d
-      } catch (e: any) { console.error(`[Firestore] findUnique ${collName}:`, e.message); return null }
+        if (!doc) return null
+        if (options.include) await resolveIncludes([doc], options.include, collName)
+        return doc
+      } catch (e: any) { firelog(`findUnique ${collName}`, e); return null }
     },
 
     async findFirst(options: { where?: Record<string, any>; orderBy?: any; include?: Record<string, any> } = {}): Promise<any | null> {
       try {
-        const q = buildQuery(getCollectionRef(), { ...options, take: 1 })
-        const snap = await q.get()
-        if (snap.empty) return null
-        const d = fromFirestoreDoc(snap.docs[0])!
+        const { filters: restFilters, hasNullFilter } = whereToRestFilters(options.where || {})
+        const restOrderBy = orderByToRest(options.orderBy)
+        const { docs } = await restQuery(collName, {
+          where: restFilters.length > 0 ? restFilters : undefined,
+          orderBy: restOrderBy.length > 0 ? restOrderBy : undefined,
+          limit: 1,
+        })
+        let result = docs
+        if (hasNullFilter && result.length > 0) {
+          result = filterDocsClientSide(result, options.where || {})
+        }
+        if (result.length === 0) return null
+        const d = result[0]
         if (options.include) await resolveIncludes([d], options.include, collName)
         return d
-      } catch (e: any) { console.error(`[Firestore] findFirst ${collName}:`, e.message); return null }
+      } catch (e: any) { firelog(`findFirst ${collName}`, e); return null }
     },
 
     async create(options: { data: Record<string, any>; include?: Record<string, any> }): Promise<any> {
-      const fs = getDb()
       const id = cuid()
       const now = new Date()
       const data = { ...options.data, createdAt: options.data.createdAt || now, updatedAt: options.data.updatedAt || now }
 
+      // Separate nested create data
       const nestedKeys: string[] = []
       const mainData: Record<string, any> = {}
       for (const [k, v] of Object.entries(data)) {
@@ -496,101 +717,111 @@ function createModelAccessors(modelName: string) {
         else mainData[k] = v
       }
 
-      await fs.collection(collName).doc(id).set(toFirestoreData(mainData))
+      await restCreate(collName, mainData, id)
 
+      // Handle nested creates
       for (const nk of nestedKeys) {
         const nestedData = (data as any)[nk].create as Record<string, any>[]
         if (Array.isArray(nestedData)) {
           const nestedColl = relationToCollection(nk) || nk + 's'
           for (const item of nestedData) {
             const nId = cuid()
-            await fs.collection(nestedColl).doc(nId).set(toFirestoreData({ ...item, [modelName + 'Id']: id, createdAt: new Date() }))
+            await restCreate(nestedColl, { ...item, [modelName + 'Id']: id, createdAt: new Date() }, nId)
           }
         }
       }
 
-      const result = fromFirestoreDoc(await fs.collection(collName).doc(id).get())!
+      const result = (await restGet(collName, id))!
       if (options.include) await resolveIncludes([result], options.include, collName)
       return result
     },
 
     async update(options: { where: Record<string, any>; data: Record<string, any>; include?: Record<string, any> }): Promise<any> {
-      const fs = getDb()
       const unique = getUniqueField(options.where)
       if (!unique) throw new Error(`update: no unique field for ${collName}`)
       const { field, value } = unique
-      let docRef: DocumentReference
+
+      let docId: string
       if (field === 'id') {
-        docRef = fs.collection(collName).doc(value)
+        docId = value
       } else {
-        const snap = await fs.collection(collName).where(field, '==', value).limit(1).get()
-        if (snap.empty) throw new Error('Record not found')
-        docRef = snap.docs[0].ref
+        const { docs } = await restQuery(collName, {
+          where: [{ field, op: 'EQUAL', value }],
+          limit: 1,
+        })
+        if (docs.length === 0) throw new Error('Record not found')
+        docId = docs[0].id
       }
 
       const ud: Record<string, any> = { updatedAt: new Date() }
       for (const [k, v] of Object.entries(options.data)) {
         if (v === undefined) continue
-        if (typeof v === 'object' && v !== null && 'increment' in v) ud[k] = FieldValue.increment(v.increment as number)
-        else if (typeof v === 'object' && v !== null && 'decrement' in v) ud[k] = FieldValue.increment(-(v.decrement as number))
-        else if (typeof v === 'object' && v !== null && 'set' in v) ud[k] = v.set
-        else ud[k] = v
+        if (typeof v === 'object' && v !== null && ('increment' in v || 'decrement' in v)) {
+          // For increment/decrement, we need to read current value first
+          const current = await restGet(collName, docId)
+          const curVal = Number(current?.[k] || 0)
+          ud[k] = curVal + (Number(v.increment || 0)) - (Number(v.decrement || 0))
+        } else if (typeof v === 'object' && v !== null && 'set' in v) {
+          ud[k] = v.set
+        } else {
+          ud[k] = v
+        }
       }
-      await docRef.update(toFirestoreData(ud))
-      const result = fromFirestoreDoc(await docRef.get())!
+
+      await restUpdate(collName, docId, ud)
+      const result = (await restGet(collName, docId))!
       if (options.include) await resolveIncludes([result], options.include, collName)
       return result
     },
 
     async delete(options: { where: Record<string, any> }): Promise<any> {
-      const fs = getDb()
       const unique = getUniqueField(options.where)
       if (!unique) throw new Error(`delete: no unique field for ${collName}`)
       const { field, value } = unique
-      let docRef: DocumentReference
+
+      let docId: string
       if (field === 'id') {
-        docRef = fs.collection(collName).doc(value)
+        docId = value
       } else {
-        const snap = await fs.collection(collName).where(field, '==', value).limit(1).get()
-        if (snap.empty) throw new Error('Record not found')
-        docRef = snap.docs[0].ref
+        const { docs } = await restQuery(collName, {
+          where: [{ field, op: 'EQUAL', value }],
+          limit: 1,
+        })
+        if (docs.length === 0) throw new Error('Record not found')
+        docId = docs[0].id
       }
-      const before = fromFirestoreDoc(await docRef.get())
-      await docRef.delete()
+
+      const before = await restGet(collName, docId)
+      await restDelete(collName, docId)
       return before
     },
 
     async deleteMany(options?: { where?: Record<string, any> }): Promise<{ count: number }> {
-      const fs = getDb()
-      const ref = getCollectionRef()
-      const q = options?.where ? buildQuery(ref, options) : ref
-      const snap = await q.get()
-      if (snap.docs.length === 0) return { count: 0 }
-      const batch = fs.batch()
-      snap.docs.forEach(d => batch.delete(d.ref))
-      await batch.commit()
-      return { count: snap.docs.length }
+      try {
+        const { filters: restFilters, hasNullFilter } = whereToRestFilters(options?.where || {})
+        let { docs } = await restQuery(collName, {
+          where: restFilters.length > 0 ? restFilters : undefined,
+        })
+        if (hasNullFilter) docs = filterDocsClientSide(docs, options?.where || {})
+        if (docs.length === 0) return { count: 0 }
+        for (const doc of docs) {
+          await restDelete(collName, doc.id)
+        }
+        return { count: docs.length }
+      } catch (e: any) {
+        firelog(`deleteMany ${collName}`, e)
+        return { count: 0 }
+      }
     },
 
     async count(options: { where?: Record<string, any> } = {}): Promise<number> {
       try {
-        const ref = getCollectionRef()
-        if (options.where && Object.keys(options.where).length > 0) {
-          return (await buildQuery(ref, options).count().get()).data().count
-        }
-        return (await ref.count().get()).data().count
+        const { filters: restFilters } = whereToRestFilters(options.where || {})
+        return await restQueryCount(collName, {
+          where: restFilters.length > 0 ? restFilters : undefined,
+        })
       } catch (error: any) {
-        if (error.message?.includes('FAILED_PRECONDITION') || error.code === 9) {
-          try {
-            const allDocs = await getDb().collection(collName).get()
-            let docs = allDocs.docs.map(s => fromFirestoreDoc(s)!)
-            if (options.where && Object.keys(options.where).length > 0) {
-              docs = filterDocsClientSide(docs, options.where)
-            }
-            return docs.length
-          } catch { return 0 }
-        }
-        console.error(`[Firestore] count ${collName}:`, error.message)
+        firelog(`count ${collName}`, error)
         return 0
       }
     },
@@ -602,18 +833,23 @@ function createModelAccessors(modelName: string) {
     },
 
     async groupBy(options: { by: string[]; where?: Record<string, any>; _count?: Record<string, any> }): Promise<any[]> {
-      const ref = getCollectionRef()
-      const q = options.where ? buildQuery(ref, options) : ref
-      const snap = await q.get()
-      const groups = new Map<string, any>()
-      for (const s of snap.docs) {
-        const d = fromFirestoreDoc(s)!
-        const gk = options.by.map(b => String(d[b] ?? 'null')).join('|')
-        if (!groups.has(gk)) groups.set(gk, { ...Object.fromEntries(options.by.map(b => [b, d[b] ?? null])), _count: {} })
-        const g = groups.get(gk)!
-        for (const ck of Object.keys(options._count || {})) g._count[ck] = (g._count[ck] || 0) + 1
+      try {
+        const { filters: restFilters } = whereToRestFilters(options.where || {})
+        let { docs } = await restQuery(collName, {
+          where: restFilters.length > 0 ? restFilters : undefined,
+        })
+        const groups = new Map<string, any>()
+        for (const d of docs) {
+          const gk = options.by.map(b => String(d[b] ?? 'null')).join('|')
+          if (!groups.has(gk)) groups.set(gk, { ...Object.fromEntries(options.by.map(b => [b, d[b] ?? null])), _count: {} })
+          const g = groups.get(gk)!
+          for (const ck of Object.keys(options._count || {})) g._count[ck] = (g._count[ck] || 0) + 1
+        }
+        return Array.from(groups.values())
+      } catch (e: any) {
+        firelog(`groupBy ${collName}`, e)
+        return []
       }
-      return Array.from(groups.values())
     },
 
     async findFirstOrThrow(options: any): Promise<any> {

@@ -21,8 +21,8 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Firebase Admin SDK uses Node.js-only modules that can't be bundled by Turbopack/Webpack
-  serverExternalPackages: ["firebase-admin", "bcryptjs"],
+  // bcryptjs uses Node.js-only crypto module
+  serverExternalPackages: ["bcryptjs"],
 };
 
 export default nextConfig;
