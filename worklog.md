@@ -934,3 +934,28 @@ Stage Summary:
 - Admin login page is now clean — just email/password form, no DB check
 - Settings textarea now properly auto-expands when typing long text
 - Files modified: AdminLogin.tsx, AdminSettings.tsx, textarea.tsx
+---
+Task ID: settings-cleanup
+Agent: Main
+Task: Fix textarea, remove Supabase wizard, adapt database tab for Firebase
+
+Work Log:
+- Fixed SettingField textarea: removed buggy auto-expand ref callback (caused issues with short text), replaced with simple rows={4} + resize-y + min-h-[80px]
+- Removed entire Supabase setup wizard from Database tab (6-step stepper, ~500 lines)
+- Removed all Supabase-related states (16 state vars), functions (loadSql, handleTestConnection), types (SqlTab), constants (sqlTabMeta)
+- Cleaned up unused lucide icon imports
+- Added Firebase Firestore header banner to Database tab showing project info
+- Created 4 new Firebase-compatible API endpoints:
+  - GET /api/database/backup — exports all collections to JSON (max 5000 docs per collection)
+  - GET /api/database/table-counts — counts documents in all Firestore collections
+  - POST /api/database/restore — imports JSON backup with merge or replace mode
+  - POST /api/database/delete-tables — deletes all documents in selected collections
+- All endpoints use db.ts model factory (which uses Firestore REST API internally)
+- File reduced from 1597 to ~989 lines
+- Lint passes clean (0 errors)
+
+Stage Summary:
+- AdminSettings.tsx now clean — no Supabase references
+- Textarea works correctly for both short and long text
+- Backup/restore/delete now work with Firebase Firestore
+- Files modified: AdminSettings.tsx, 4 new API routes created
