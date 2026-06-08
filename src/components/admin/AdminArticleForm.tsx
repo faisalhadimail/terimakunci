@@ -22,11 +22,11 @@ import { Loader2, Save, ArrowLeft } from 'lucide-react';
 import { fetchWithAuth } from '@/lib/api';
 
 const articleSchema = z.object({
-  title: z.string().min(5, 'Judul minimal 5 karakter'),
-  slug: z.string().min(3, 'Slug minimal 3 karakter'),
+  title: z.string().min(1, 'Judul tidak boleh kosong'),
+  slug: z.string().min(1, 'Slug tidak boleh kosong'),
   categoryId: z.string().optional(),
   tags: z.string().optional(),
-  content: z.string().min(10, 'Konten minimal 10 karakter'),
+  content: z.string().min(1, 'Konten tidak boleh kosong'),
   excerpt: z.string().optional(),
   featuredImage: z.string().optional(),
   isPublished: z.boolean(),

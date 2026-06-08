@@ -959,3 +959,50 @@ Stage Summary:
 - Textarea works correctly for both short and long text
 - Backup/restore/delete now work with Firebase Firestore
 - Files modified: AdminSettings.tsx, 4 new API routes created
+---
+Task ID: 17
+Agent: Main
+Task: Fix data creation issues, article validation, and create Firebase database API routes
+
+Work Log:
+- Fixed article form validation in AdminArticleForm.tsx: changed Zod schema min lengths
+  - title: min(5) → min(1) 
+  - slug: min(3) → min(1)
+  - content: min(10) → min(1)
+  - Now allows creating articles with just 1 word titles
+- Verified Supabase settings already removed from AdminSettings.tsx (0 references found)
+- Created /home/z/my-project/src/lib/firestore-admin.ts — shared Firestore REST helper module:
+  - COLLECTION_CONFIG: maps collection names to labels and PascalCase keys
+  - firestoreUrl(): URL builder with API key
+  - jsToRestValue() / restValueToJs(): value conversion
+  - restDocToObj(): REST document to plain JS object
+  - firestoreCount(): count collection using aggregation query with fallback
+  - firestoreQueryAll(): fetch all docs with offset-based pagination
+  - firestoreCreateDoc(): create doc with specific ID
+  - firestoreDocExists(): check if document exists
+  - firestoreDeleteDoc() / firestoreBatchDelete(): delete docs
+  - serializeForBackup() / deserializeFromBackup(): date serialization
+- Created 4 database API routes for Firebase Firestore:
+  - GET /api/database/table-counts — counts all 16 collections in parallel
+  - GET /api/database/backup — export collections to downloadable JSON
+  - POST /api/database/restore — import from JSON backup (merge/replace modes)
+  - POST /api/database/delete-tables — delete all docs in selected collections (with safety check for users)
+- Fixed firestoreQueryAll pagination: changed from broken startAt cursor to offset-based pagination
+- Fixed response format: all routes return { data: { ... } } wrapper to match UI expectations
+
+Verification (all passed):
+- ✓ Login: Admin TerimaKunci authenticated successfully
+- ✓ Table Counts: 1248 total documents across 16 collections
+- ✓ Create Article: "Test Artikel" created with short title
+- ✓ Create Property: "Rumah Test" created successfully  
+- ✓ Create PropertyType: created successfully
+- ✓ Create ArticleCategory: created successfully
+- Lint: 0 errors, 0 warnings
+
+Stage Summary:
+- Article form now accepts 1-word input (no minimum length validation)
+- Database tab in admin settings now fully functional with Firebase
+- 4 new API routes: table-counts, backup, restore, delete-tables
+- All data creation verified working (articles, properties, types, categories)
+- Files modified: AdminArticleForm.tsx
+- Files created: firestore-admin.ts, 4 database route files
