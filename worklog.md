@@ -1006,3 +1006,29 @@ Stage Summary:
 - All data creation verified working (articles, properties, types, categories)
 - Files modified: AdminArticleForm.tsx
 - Files created: firestore-admin.ts, 4 database route files
+
+---
+Task ID: 17
+Agent: Main
+Task: Create Firebase Firestore database API routes for Backup, Restore, Delete Data
+
+Work Log:
+- Diagnosed issue: AdminSettings Database tab showed "belum terhubung ke firebase" because /api/database/* routes returned 404 (routes were removed during Supabase→Firebase migration but UI still referenced them)
+- Created 4 new API routes under /api/database/:
+  1. GET /api/database/table-counts - Counts all Firestore collections in parallel using batched findMany with pagination (500 per batch) for accurate counts
+  2. GET /api/database/backup - Exports all selected collections to JSON file with metadata (version, timestamp, project ID), supports ?tables= filter param
+  3. POST /api/database/restore - Imports data from JSON backup file, supports merge (skip existing) and replace modes, validates unique fields
+  4. POST /api/database/delete-tables - Deletes all documents from selected collections with safety checks (cannot delete users + settings together)
+- All routes require admin authentication via requireAuth
+- Initial table-counts used Firestore aggregation query which returned inflated counts (80 per collection) due to REST API pagination truncation
+- Fixed by switching to findMany with batch pagination for accurate counts (13 Properties, 4 Articles, 4 Users, 77 total)
+- Verified all endpoints via curl tests
+- Browser verification confirmed: Database tab loads correctly with accurate counts, all 3 sections (Backup, Restore, Delete) visible and functional
+
+Stage Summary:
+- 4 new API routes created for Firebase Firestore database management
+- Table counts now accurate (using findMany pagination instead of aggregation query)
+- Backup exports JSON with _meta metadata, serializes Date objects to ISO strings
+- Restore supports merge mode (skip existing) and replace mode (overwrite), with duplicate detection
+- Delete has safety check preventing deletion of users + settings simultaneously
+- AdminSettings Database tab fully functional and verified in browser
