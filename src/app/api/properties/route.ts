@@ -66,10 +66,11 @@ export async function GET(request: NextRequest) {
     ...(villageId && { villageId }),
     ...(propertyTypeId && { propertyTypeId }),
     ...(status && { status }),
-    ...(priceMin !== undefined && { price: { gte: Number(priceMin) } }),
-    ...(priceMax !== undefined && { price: { lte: Number(priceMax) } }),
-    ...(priceMin !== undefined && priceMax !== undefined && {
-      price: { gte: Number(priceMin), lte: Number(priceMax) },
+    ...((priceMin !== undefined || priceMax !== undefined) && {
+      price: {
+        ...(priceMin !== undefined && { gte: Number(priceMin) }),
+        ...(priceMax !== undefined && { lte: Number(priceMax) }),
+      },
     }),
     ...(landAreaMin !== undefined && { landArea: { gte: landAreaMin } }),
     ...(landAreaMax !== undefined && { landArea: { lte: landAreaMax } }),
@@ -112,7 +113,7 @@ export async function GET(request: NextRequest) {
           propertyType: { select: { id: true, name: true, slug: true, icon: true } },
           city: { select: { id: true, name: true, slug: true } },
           district: { select: { id: true, name: true, slug: true } },
-          village: { select: { id: true, name: true, slug: true } },
+          // village removed (simplified to 2-level: city + district)
           agent: {
             select: { id: true, name: true, phone: true, avatar: true },
           },
@@ -219,7 +220,6 @@ export async function POST(request: NextRequest) {
         propertyType: true,
         city: true,
         district: true,
-        village: true,
         agent: { select: { id: true, name: true, phone: true, avatar: true } },
         images: { orderBy: { sortOrder: 'asc' } },
       },

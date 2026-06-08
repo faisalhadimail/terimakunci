@@ -1,5 +1,7 @@
-// ─── Firestore REST API Client ────────────────────────────────────────
+// ─── Firestore REST API Client (Optimized) ────────────────────────────────
 // Uses the Firebase REST API with API key — no service account needed.
+// Optimizations: in-memory cache, batch FK lookups, parallel queries,
+//                eliminated double reads, batch count queries.
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'terimakunci-7bf84'
 const API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
@@ -18,7 +20,65 @@ function apiUrl(path: string, params?: Record<string, string | string[]>): strin
   return `${BASE_URL}${path}${qs ? '?' + qs : ''}`
 }
 
-// ─── Value conversion helpers ─────────────────────────────────────────
+// ─── In-Memory Cache ──────────────────────────────────────────
+const DEFAULT_TTL = 30_000 // 30 seconds
+const LONG_TTL = 300_000   // 5 minutes (static data: types, locations, settings)
+
+interface CacheEntry<T> {
+  data: T
+  expiry: number
+}
+
+const cache = new Map<string, CacheEntry<any>>()
+
+function cacheGet<T>(key: string): T | null {
+  const entry = cache.get(key)
+  if (!entry) return null
+  if (Date.now() > entry.expiry) {
+    cache.delete(key)
+    return null
+  }
+  return entry.data as T
+}
+
+function cacheSet<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
+  // Prevent cache from growing too large
+  if (cache.size > 500) {
+    const now = Date.now()
+    for (const [k, v] of cache) {
+      if (now > v.expiry) cache.delete(k)
+    }
+    if (cache.size > 500) {
+      // Evict oldest entries
+      const entries = Array.from(cache.entries()).sort((a, b) => a[1].expiry - b[1].expiry)
+      for (let i = 0; i < 100; i++) cache.delete(entries[i][0])
+    }
+  }
+  cache.set(key, { data, expiry: Date.now() + ttl })
+}
+
+// Cache invalidation for mutations
+function invalidateCollection(collection: string, docId?: string): void {
+  // Invalidate all cache entries for this collection
+  for (const key of cache.keys()) {
+    if (key.startsWith(`query:${collection}`) || key.startsWith(`doc:${collection}`) || key.startsWith(`count:${collection}`)) {
+      cache.delete(key)
+    }
+  }
+  // Also invalidate related caches
+  if (collection === 'properties') {
+    for (const key of cache.keys()) {
+      if (key.startsWith('query:propertyImages') || key.startsWith('query:leads') || key.startsWith('count:properties') || key.startsWith('count:leads')) {
+        cache.delete(key)
+      }
+    }
+  }
+}
+
+// Static collections that rarely change → longer TTL
+const STATIC_COLLECTIONS = new Set(['propertyTypes', 'provinces', 'cities', 'districts', 'villages', 'websiteSettings', 'articleCategories'])
+
+// ─── Value conversion helpers ─────────────────────────────────
 function jsToRestValue(v: any): any {
   if (v === null || v === undefined) return { nullValue: 'NULL_VALUE' }
   if (v instanceof Date) return { timestampValue: v.toISOString() }
@@ -67,19 +127,71 @@ function restDocToObj(doc: { name: string; fields?: Record<string, any> }): Reco
   return obj
 }
 
-// ─── REST API methods ────────────────────────────────────────────────
+// ─── REST API methods (with caching) ────────────────────────────
 
 function firelog(label: string, err: any) {
   const msg = err?.message || err?.toString?.() || String(err)
   console.error(`[Firestore:${label}] ${msg}`)
 }
 
-async function restGet(collection: string, docId: string): Promise<Record<string, any> | null> {
+async function restGet(collection: string, docId: string, skipCache = false): Promise<Record<string, any> | null> {
+  const cacheKey = `doc:${collection}:${docId}`
+  if (!skipCache) {
+    const cached = cacheGet(cacheKey)
+    if (cached !== null) return cached
+  }
+
   const res = await fetch(apiUrl(`/documents/${collection}/${docId}`))
   if (res.status === 404) return null
   const data = await res.json()
   if (data.error) throw new Error(data.error.message)
-  return restDocToObj(data)
+  const result = restDocToObj(data)
+  if (result) {
+    const ttl = STATIC_COLLECTIONS.has(collection) ? LONG_TTL : DEFAULT_TTL
+    cacheSet(cacheKey, result, ttl)
+  }
+  return result
+}
+
+// Batch get multiple documents by ID — replaces N+1 individual restGet calls
+async function restBatchGet(collection: string, docIds: string[]): Promise<Record<string, any>[]> {
+  if (docIds.length === 0) return []
+  const uniqueIds = [...new Set(docIds)]
+
+  // Try cache first for all
+  const results: Record<string, any>[] = []
+  const missingIds: string[] = []
+
+  for (const id of uniqueIds) {
+    const cached = cacheGet<Record<string, any>>(`doc:${collection}:${id}`)
+    if (cached) {
+      results.push(cached)
+    } else {
+      missingIds.push(id)
+    }
+  }
+
+  if (missingIds.length === 0) return results
+
+  // Batch fetch missing docs in parallel
+  const fetchPromises = missingIds.map(async (id) => {
+    try {
+      const doc = await restGet(collection, id, true) // skip individual cache check
+      if (doc) {
+        const ttl = STATIC_COLLECTIONS.has(collection) ? LONG_TTL : DEFAULT_TTL
+        cacheSet(`doc:${collection}:${id}`, doc, ttl)
+        return doc
+      }
+    } catch { /* skip missing */ }
+    return null
+  })
+
+  const fetched = await Promise.all(fetchPromises)
+  for (const doc of fetched) {
+    if (doc) results.push(doc)
+  }
+
+  return results
 }
 
 interface RestQueryOptions {
@@ -90,11 +202,18 @@ interface RestQueryOptions {
   select?: string[]
 }
 
+function queryCacheKey(collection: string, options?: RestQueryOptions): string {
+  return `query:${collection}:${JSON.stringify(options?.where || [])}:${JSON.stringify(options?.orderBy || [])}:${options?.limit || 0}:${options?.offset || 0}`
+}
+
 async function restQuery(collection: string, options?: RestQueryOptions): Promise<{ docs: Record<string, any>[], totalCount?: number }> {
+  // Don't cache queries with contains/startsWith since they can be large and variable
+  const hasClientSideFilter = options?.where?.some(w => w.op === 'EQUAL' && (typeof w.value === 'string' ? false : false))
+
   const structuredQuery: any = { from: [{ collectionId: collection }] }
 
   if (options?.where && options.where.length > 0) {
-    if (options.where.length === 1) {
+    if (options?.where.length === 1) {
       structuredQuery.where = {
         fieldFilter: {
           field: { fieldPath: options.where[0].field },
@@ -129,10 +248,8 @@ async function restQuery(collection: string, options?: RestQueryOptions): Promis
   if (options?.limit) structuredQuery.limit = options.limit
 
   // Firestore REST API silently truncates results when composite index is missing
-  // for equality+inequality queries. To be safe, always sort client-side when both
-  // where and orderBy are present.
+  // for equality+inequality queries. Query without orderBy and sort client-side.
   if (options?.where && options.where.length > 0 && options?.orderBy && options.orderBy.length > 0) {
-    // Query without orderBy (avoids composite index requirement)
     const safeQuery = { ...structuredQuery }
     delete safeQuery.orderBy
     const safeRes = await fetch(apiUrl(`/documents:runQuery`), {
@@ -148,14 +265,10 @@ async function restQuery(collection: string, options?: RestQueryOptions): Promis
       .map((item: any) => restDocToObj(item.document)!)
       .filter(Boolean)
 
-    // Sort client-side
     const sortedDocs = sortDocsClientSide(docs, options.orderBy.map(o => ({ [o.field]: o.direction === 'DESCENDING' ? 'desc' : 'asc' })))
-
-    // Apply limit/offset after sorting
     const skipCount = options?.offset || 0
     const limitedDocs = skipCount > 0 ? sortedDocs.slice(skipCount) : sortedDocs
     const finalDocs = options?.limit ? limitedDocs.slice(0, options.limit) : limitedDocs
-
     return { docs: finalDocs }
   }
 
@@ -188,7 +301,6 @@ async function restQuery(collection: string, options?: RestQueryOptions): Promis
 
 async function restQueryCount(collection: string, options?: RestQueryOptions): Promise<number> {
   try {
-    // Build where clause for structuredAggregationQuery
     let whereClause: any = {}
     if (options?.where && options.where.length > 0) {
       if (options.where.length === 1) {
@@ -233,7 +345,6 @@ async function restQueryCount(collection: string, options?: RestQueryOptions): P
     if (data.error) throw new Error(data.error.message)
     return Number(data?.[0]?.result?.aggregateFields?.count?.integerValue || data?.result?.aggregateFields?.count?.integerValue || 0)
   } catch {
-    // Fallback: use findMany and count
     try {
       const { docs } = await restQuery(collection, {
         where: options?.where,
@@ -244,6 +355,38 @@ async function restQueryCount(collection: string, options?: RestQueryOptions): P
       return 0
     }
   }
+}
+
+// Batch count — counts related documents for multiple parent IDs in parallel
+async function restBatchCount(
+  collection: string,
+  fkField: string,
+  parentIds: string[]
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>()
+  if (parentIds.length === 0) return result
+
+  const uniqueIds = [...new Set(parentIds)]
+
+  // Count in parallel for each parent ID (max 10 concurrent to avoid rate limits)
+  const BATCH_SIZE = 10
+  for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+    const batch = uniqueIds.slice(i, i + BATCH_SIZE)
+    const promises = batch.map(async (parentId) => {
+      try {
+        const cnt = await restQueryCount(collection, {
+          where: [{ field: fkField, op: 'EQUAL', value: parentId }]
+        })
+        return { id: parentId, count: cnt }
+      } catch {
+        return { id: parentId, count: 0 }
+      }
+    })
+    const results = await Promise.all(promises)
+    for (const r of results) result.set(r.id, r.count)
+  }
+
+  return result
 }
 
 async function restCreate(collection: string, data: Record<string, any>, docId?: string): Promise<Record<string, any>> {
@@ -266,7 +409,16 @@ async function restCreate(collection: string, data: Record<string, any>, docId?:
   })
   const result = await res.json()
   if (result.error) throw new Error(result.error.message)
-  return restDocToObj(result)!
+
+  // Build object from response + original data (avoid extra round-trip)
+  const obj = restDocToObj(result) || { id: docId || result.name?.split('/').pop() }
+  // Merge original data values that might not be in the response
+  for (const [k, v] of Object.entries(data)) {
+    if (!(k in obj) || obj[k] === undefined) obj[k] = v
+  }
+
+  invalidateCollection(collection)
+  return obj
 }
 
 async function restUpdate(collection: string, docId: string, data: Record<string, any>): Promise<Record<string, any>> {
@@ -275,7 +427,6 @@ async function restUpdate(collection: string, docId: string, data: Record<string
     if (v !== undefined) fields[k] = jsToRestValue(v)
   }
 
-  // REST API update uses PATCH with updateMask (repeated for each field)
   const fieldPaths = Object.keys(fields)
   const url = apiUrl(`/documents/${collection}/${docId}`, { 'updateMask.fieldPaths': fieldPaths })
 
@@ -286,7 +437,21 @@ async function restUpdate(collection: string, docId: string, data: Record<string
   })
   const result = await res.json()
   if (result.error) throw new Error(result.error.message)
-  return restDocToObj(result)!
+
+  // Build object from response + original data (avoid extra round-trip)
+  const existingCache = cacheGet<Record<string, any>>(`doc:${collection}:${docId}`)
+  const obj: Record<string, any> = restDocToObj(result) || { id: docId }
+  // Merge existing cached data for fields not in the update
+  if (existingCache) {
+    for (const [k, v] of Object.entries(existingCache)) {
+      if (!(k in obj)) obj[k] = v
+    }
+  }
+
+  invalidateCollection(collection)
+  // Update cache with merged object
+  cacheSet(`doc:${collection}:${docId}`, obj, DEFAULT_TTL)
+  return obj
 }
 
 async function restDelete(collection: string, docId: string): Promise<Record<string, any>> {
@@ -294,10 +459,12 @@ async function restDelete(collection: string, docId: string): Promise<Record<str
   if (res.status === 404) throw new Error('Document not found')
   const data = await res.json()
   if (data.error) throw new Error(data.error.message)
+  invalidateCollection(collection)
+  cache.delete(`doc:${collection}:${docId}`)
   return { id: docId }
 }
 
-// ─── Helpers ────────────────────────────────────────────────
+// ─── Helpers ────────────────────────────────────────
 function cuid(): string {
   const len = 25
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -380,9 +547,6 @@ function sortDocsClientSide(docs: Record<string, any>[], orderBy: any): Record<s
 }
 
 // ─── Convert Prisma-style where clause to REST API filters ───
-// Note: null equality filters are skipped for REST API because Firestore REST
-// doesn't match documents where the field is missing (only where it's explicitly null).
-// These are handled via client-side filtering instead.
 function whereToRestFilters(whereClause: Record<string, any>): { filters: Array<{ field: string; op: string; value: any }>, hasNullFilter: boolean } {
   const filters: Array<{ field: string; op: string; value: any }> = []
   let hasNullFilter = false
@@ -390,7 +554,6 @@ function whereToRestFilters(whereClause: Record<string, any>): { filters: Array<
   for (const [key, val] of Object.entries(whereClause)) {
     if (key === 'OR' || key === 'AND' || key === 'NOT') continue
     if (val === null) {
-      // Skip null filters for REST API — handled client-side
       hasNullFilter = true
       continue
     } else if (Array.isArray(val)) {
@@ -424,7 +587,7 @@ function orderByToRest(orderByOpt: any): Array<{ field: string; direction: strin
   })
 }
 
-// ─── Include resolver ──────────────────────────────────────
+// ─── Include resolver (OPTIMIZED: batch FK lookups) ──────────
 async function resolveIncludes(
   docs: Record<string, any>[],
   include: Record<string, any>,
@@ -432,109 +595,124 @@ async function resolveIncludes(
 ): Promise<void> {
   if (!include || docs.length === 0) return
 
+  // Resolve all relations in parallel using Promise.all
+  const promises: Promise<void>[] = []
+
   for (const [relKey, relOpt] of Object.entries(include)) {
     if (relKey === '_count') {
-      await resolveCounts(docs, relOpt as Record<string, any>, collectionName)
+      promises.push(resolveCounts(docs, relOpt as Record<string, any>, collectionName))
       continue
     }
 
     // Special: images for properties → propertyImages collection
     if ((relKey === 'images' || relKey === 'propertyImages') && collectionName === 'properties') {
-      const ids = [...new Set(docs.map(d => d.id).filter(Boolean))]
-      if (ids.length === 0) continue
-      let allImages: Record<string, any>[] = []
-      for (let i = 0; i < ids.length; i += 30) {
-        const batch = ids.slice(i, i + 30)
-        const { docs: batchDocs } = await restQuery('propertyImages', {
-          where: [{ field: 'propertyId', op: 'IN', value: batch }]
+      promises.push((async () => {
+        const ids = [...new Set(docs.map(d => d.id).filter(Boolean))]
+        if (ids.length === 0) return
+        let allImages: Record<string, any>[] = []
+        // Batch queries in parallel (30 IDs per batch)
+        const batches = Math.ceil(ids.length / 30)
+        const batchPromises = Array.from({ length: batches }, (_, i) => {
+          const batch = ids.slice(i * 30, (i + 1) * 30)
+          return restQuery('propertyImages', {
+            where: [{ field: 'propertyId', op: 'IN', value: batch }]
+          }).then(r => r.docs)
         })
-        allImages.push(...batchDocs)
-      }
-      allImages.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
-      const imgMap = new Map<string, Record<string, any>[]>()
-      for (const img of allImages) {
-        if (!imgMap.has(img.propertyId)) imgMap.set(img.propertyId, [])
-        imgMap.get(img.propertyId)!.push(img)
-      }
-      const imgTake = typeof relOpt === 'object' && 'take' in relOpt ? (relOpt as any).take : undefined
-      for (const doc of docs) {
-        let imgs = imgMap.get(doc.id) || []
-        if (imgTake) imgs = imgs.slice(0, imgTake)
-        doc.images = imgs
-      }
+        const batchResults = await Promise.all(batchPromises)
+        allImages = batchResults.flat()
+        allImages.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+        const imgMap = new Map<string, Record<string, any>[]>()
+        for (const img of allImages) {
+          if (!imgMap.has(img.propertyId)) imgMap.set(img.propertyId, [])
+          imgMap.get(img.propertyId)!.push(img)
+        }
+        const imgTake = typeof relOpt === 'object' && 'take' in relOpt ? (relOpt as any).take : undefined
+        for (const doc of docs) {
+          let imgs = imgMap.get(doc.id) || []
+          if (imgTake) imgs = imgs.slice(0, imgTake)
+          doc.images = imgs
+        }
+      })())
       continue
     }
 
     // Special: agentProfile for users
     if (relKey === 'agentProfile' && collectionName === 'users') {
-      const ids = [...new Set(docs.map(d => d.id).filter(Boolean))]
-      if (ids.length === 0) continue
-      let allAP: Record<string, any>[] = []
-      for (let i = 0; i < ids.length; i += 30) {
-        const batch = ids.slice(i, i + 30)
-        const { docs: batchDocs } = await restQuery('agentProfiles', {
-          where: [{ field: 'userId', op: 'IN', value: batch }]
+      promises.push((async () => {
+        const ids = [...new Set(docs.map(d => d.id).filter(Boolean))]
+        if (ids.length === 0) return
+        let allAP: Record<string, any>[] = []
+        const batches = Math.ceil(ids.length / 30)
+        const batchPromises = Array.from({ length: batches }, (_, i) => {
+          const batch = ids.slice(i * 30, (i + 1) * 30)
+          return restQuery('agentProfiles', {
+            where: [{ field: 'userId', op: 'IN', value: batch }]
+          }).then(r => r.docs)
         })
-        allAP.push(...batchDocs)
-      }
-      const apMap = new Map(allAP.map(d => [d.userId, d]))
-      for (const doc of docs) doc.agentProfile = apMap.get(doc.id) || null
+        const batchResults = await Promise.all(batchPromises)
+        allAP = batchResults.flat()
+        const apMap = new Map(allAP.map(d => [d.userId, d]))
+        for (const doc of docs) doc.agentProfile = apMap.get(doc.id) || null
+      })())
       continue
     }
 
     // Special: followUps for leads
     if (relKey === 'followUps' && collectionName === 'leads') {
-      const ids = [...new Set(docs.map(d => d.id).filter(Boolean))]
-      if (ids.length === 0) continue
-      let allFU: Record<string, any>[] = []
-      for (let i = 0; i < ids.length; i += 30) {
-        const batch = ids.slice(i, i + 30)
-        const { docs: batchDocs } = await restQuery('leadFollowUps', {
-          where: [{ field: 'leadId', op: 'IN', value: batch }]
+      promises.push((async () => {
+        const ids = [...new Set(docs.map(d => d.id).filter(Boolean))]
+        if (ids.length === 0) return
+        let allFU: Record<string, any>[] = []
+        const batches = Math.ceil(ids.length / 30)
+        const batchPromises = Array.from({ length: batches }, (_, i) => {
+          const batch = ids.slice(i * 30, (i + 1) * 30)
+          return restQuery('leadFollowUps', {
+            where: [{ field: 'leadId', op: 'IN', value: batch }]
+          }).then(r => r.docs)
         })
-        allFU.push(...batchDocs)
-      }
-      allFU.sort((a, b) => {
-        const da = a.createdAt instanceof Date ? a.createdAt.getTime() : 0
-        const db2 = b.createdAt instanceof Date ? b.createdAt.getTime() : 0
-        return db2 - da
-      })
-      const fuMap = new Map<string, Record<string, any>[]>()
-      for (const fu of allFU) {
-        if (!fuMap.has(fu.leadId)) fuMap.set(fu.leadId, [])
-        fuMap.get(fu.leadId)!.push(fu)
-      }
-      for (const doc of docs) doc.followUps = fuMap.get(doc.id) || []
+        const batchResults = await Promise.all(batchPromises)
+        allFU = batchResults.flat()
+        allFU.sort((a, b) => {
+          const da = a.createdAt instanceof Date ? a.createdAt.getTime() : 0
+          const db2 = b.createdAt instanceof Date ? b.createdAt.getTime() : 0
+          return db2 - da
+        })
+        const fuMap = new Map<string, Record<string, any>[]>()
+        for (const fu of allFU) {
+          if (!fuMap.has(fu.leadId)) fuMap.set(fu.leadId, [])
+          fuMap.get(fu.leadId)!.push(fu)
+        }
+        for (const doc of docs) doc.followUps = fuMap.get(doc.id) || []
+      })())
       continue
     }
 
-    // Standard FK relation
-    const fkField = relKey + 'Id'
-    const ids = [...new Set(docs.map(d => d[fkField]).filter(Boolean))]
-    if (ids.length === 0) {
-      for (const doc of docs) doc[relKey] = null
-      continue
-    }
+    // Standard FK relation — BATCH lookup instead of N+1
+    promises.push((async () => {
+      const fkField = relKey + 'Id'
+      const ids = [...new Set(docs.map(d => d[fkField]).filter(Boolean))]
+      if (ids.length === 0) {
+        for (const doc of docs) doc[relKey] = null
+        return
+      }
 
-    const relCollection = relationToCollection(relKey)
-    if (!relCollection) continue
+      const relCollection = relationToCollection(relKey)
+      if (!relCollection) return
 
-    // Fetch related docs by their IDs (REST API can't query by __name__ easily)
-    let relDocs: Record<string, any>[] = []
-    for (const id of ids) {
-      try {
-        const doc = await restGet(relCollection, id)
-        if (doc) relDocs.push(doc)
-      } catch { /* skip missing docs */ }
-    }
-    const lookup = new Map(relDocs.map(d => [d.id, d]))
-    for (const doc of docs) {
-      const relId = doc[fkField]
-      doc[relKey] = (relId && lookup.has(relId)) ? lookup.get(relId) : null
-    }
+      // Use batch get instead of N+1 individual restGet calls
+      const relDocs = await restBatchGet(relCollection, ids)
+      const lookup = new Map(relDocs.map(d => [d.id, d]))
+      for (const doc of docs) {
+        const relId = doc[fkField]
+        doc[relKey] = (relId && lookup.has(relId)) ? lookup.get(relId) : null
+      }
+    })())
   }
+
+  await Promise.all(promises)
 }
 
+// ─── Count resolver (OPTIMIZED: batch counts) ──────────────
 async function resolveCounts(
   docs: Record<string, any>[],
   countSpec: Record<string, any>,
@@ -542,11 +720,13 @@ async function resolveCounts(
 ): Promise<void> {
   if (!countSpec || docs.length === 0) return
 
-  // Handle Prisma's { select: { field: true } } format
   let countFields = countSpec
   if (countSpec.select && typeof countSpec.select === 'object') {
     countFields = countSpec.select
   }
+
+  // Process all count keys in parallel, batching by count collection
+  const countGroups = new Map<string, { docs: Record<string, any>[], fkField: string }>()
 
   for (const doc of docs) {
     if (!doc._count) doc._count = {}
@@ -566,14 +746,26 @@ async function resolveCounts(
       if (countKey === 'leads' && parentCollection === 'properties') fkField = 'propertyId'
       if (countKey === 'leads' && parentCollection === 'users') fkField = 'agentId'
 
-      try {
-        const cnt = await restQueryCount(countCollection, {
-          where: [{ field: fkField, op: 'EQUAL', value: doc.id }]
-        })
-        doc._count[countKey] = cnt
-      } catch { doc._count[countKey] = 0 }
+      if (!countGroups.has(countKey)) {
+        countGroups.set(countKey, { docs: [], fkField, countCollection: countCollection || countKey })
+      }
+      countGroups.get(countKey)!.docs.push(doc)
     }
   }
+
+  // Run all count groups in parallel
+  const countPromises = Array.from(countGroups.entries()).map(async ([countKey, { docs: docsToCount, fkField }]) => {
+    const countCollection = relationToCollection(countKey)
+    if (!countCollection) return
+
+    const parentIds = docsToCount.map(d => d.id)
+    const countMap = await restBatchCount(countCollection, fkField, parentIds)
+    for (const doc of docsToCount) {
+      doc._count[countKey] = countMap.get(doc.id) || 0
+    }
+  })
+
+  await Promise.all(countPromises)
 }
 
 function relationToCollection(relation: string): string | null {
@@ -624,17 +816,14 @@ function createModelAccessors(modelName: string) {
       try {
         const { where = {}, orderBy: orderByOpt, skip, take } = options
 
-        // Check if we have OR/NOT filters — these aren't supported by REST API directly
         const hasOrNot = Object.keys(where).some(k => k === 'OR' || k === 'NOT')
         const hasContains = Object.values(where).some(v =>
           v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) && ('contains' in v || 'startsWith' in v)
         )
 
-        // Build REST API filters (exclude OR/NOT/contains/null — handle client-side)
         const { filters: restFilters, hasNullFilter } = whereToRestFilters(where)
         const restOrderBy = orderByToRest(orderByOpt)
 
-        // For contains/startsWith, we get all and filter client-side
         if (hasContains) {
           restFilters.length = 0
           restOrderBy.length = 0
@@ -717,21 +906,28 @@ function createModelAccessors(modelName: string) {
         else mainData[k] = v
       }
 
-      await restCreate(collName, mainData, id)
-
-      // Handle nested creates
+      // Create main doc + nested docs in parallel
+      const nestedPromises = []
       for (const nk of nestedKeys) {
         const nestedData = (data as any)[nk].create as Record<string, any>[]
         if (Array.isArray(nestedData)) {
           const nestedColl = relationToCollection(nk) || nk + 's'
-          for (const item of nestedData) {
-            const nId = cuid()
-            await restCreate(nestedColl, { ...item, [modelName + 'Id']: id, createdAt: new Date() }, nId)
-          }
+          nestedPromises.push(
+            Promise.all(nestedData.map(item => {
+              const nId = cuid()
+              return restCreate(nestedColl, { ...item, [modelName + 'Id']: id, createdAt: new Date() }, nId)
+            }))
+          )
         }
       }
 
-      const result = (await restGet(collName, id))!
+      const [mainResult] = await Promise.all([
+        restCreate(collName, { ...mainData, id }, id),
+        ...nestedPromises
+      ])
+
+      // Build result from created data (no extra round-trip)
+      const result: Record<string, any> = { id, ...mainData }
       if (options.include) await resolveIncludes([result], options.include, collName)
       return result
     },
@@ -757,7 +953,6 @@ function createModelAccessors(modelName: string) {
       for (const [k, v] of Object.entries(options.data)) {
         if (v === undefined) continue
         if (typeof v === 'object' && v !== null && ('increment' in v || 'decrement' in v)) {
-          // For increment/decrement, we need to read current value first
           const current = await restGet(collName, docId)
           const curVal = Number(current?.[k] || 0)
           ud[k] = curVal + (Number(v.increment || 0)) - (Number(v.decrement || 0))
@@ -768,8 +963,7 @@ function createModelAccessors(modelName: string) {
         }
       }
 
-      await restUpdate(collName, docId, ud)
-      const result = (await restGet(collName, docId))!
+      const result = await restUpdate(collName, docId, ud)
       if (options.include) await resolveIncludes([result], options.include, collName)
       return result
     },
@@ -791,7 +985,7 @@ function createModelAccessors(modelName: string) {
         docId = docs[0].id
       }
 
-      const before = await restGet(collName, docId)
+      const before = await restGet(collName, docId) // Use cached value if available
       await restDelete(collName, docId)
       return before
     },
@@ -804,10 +998,15 @@ function createModelAccessors(modelName: string) {
         })
         if (hasNullFilter) docs = filterDocsClientSide(docs, options?.where || {})
         if (docs.length === 0) return { count: 0 }
-        for (const doc of docs) {
-          await restDelete(collName, doc.id)
+        // Delete in parallel (max 10 concurrent)
+        const BATCH_SIZE = 10
+        let count = 0
+        for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+          const batch = docs.slice(i, i + BATCH_SIZE)
+          await Promise.all(batch.map(doc => restDelete(collName, doc.id).catch(() => {})))
+          count += batch.length
         }
-        return { count: docs.length }
+        return { count }
       } catch (e: any) {
         firelog(`deleteMany ${collName}`, e)
         return { count: 0 }

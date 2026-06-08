@@ -143,21 +143,29 @@ export default function AdminPropertyForm() {
     const loadRefData = async () => {
       setLoading(true);
       try {
-        const [ptRes, cRes, aRes] = await Promise.allSettled([
+        // Fetch reference data + property (edit) in parallel
+        const allPromises: Promise<any>[] = [
           fetchWithAuth('/api/property-types').then((r) => r.json()),
           fetchWithAuth('/api/locations/cities').then((r) => r.json()),
           fetchWithAuth('/api/agents').then((r) => r.json()),
-        ]);
+        ]
+        if (isEdit && propertyId) {
+          allPromises.push(fetchWithAuth(`/api/properties/${propertyId}`).then((r) => r.json()));
+        }
+        const allRes = await Promise.allSettled(allPromises);
+
+        const ptRes = allRes[0];
+        const cRes = allRes[1];
+        const aRes = allRes[2];
         if (ptRes.status === 'fulfilled') setPropertyTypes(Array.isArray(ptRes.value?.data) ? ptRes.value.data : Array.isArray(ptRes.value) ? ptRes.value : []);
         if (cRes.status === 'fulfilled') setCities(Array.isArray(cRes.value?.data) ? cRes.value.data : Array.isArray(cRes.value) ? cRes.value : []);
         if (aRes.status === 'fulfilled') setAgents(Array.isArray(aRes.value?.data) ? aRes.value.data : Array.isArray(aRes.value) ? aRes.value : []);
 
-        // Load existing property for edit
-        if (isEdit && propertyId) {
-          const res = await fetchWithAuth(`/api/properties/${propertyId}`);
-          if (res.ok) {
-            const json = await res.json();
-            const p = (json.data || json) as Property;
+        // Process property edit (already fetched in parallel)
+        if (isEdit && propertyId && allRes[3]?.status === 'fulfilled') {
+          const json = allRes[3].value;
+          const p = (json.data || json) as Property;
+          if (p?.id) {
             setCurrentProperty(p);
             form.reset({
               title: p.title || '',
