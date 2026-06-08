@@ -77,7 +77,7 @@ export default function HomePage() {
     return s?.value || fallback;
   };
 
-  const whatsappNumber = getSetting('whatsapp_number', '6281234567890');
+  const whatsappNumber = getSetting('contact_whatsapp', '6281234567890');
 
   const fetchData = useCallback(async () => {
     setLoading(true);

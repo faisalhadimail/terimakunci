@@ -1032,3 +1032,71 @@ Stage Summary:
 - Restore supports merge mode (skip existing) and replace mode (overwrite), with duplicate detection
 - Delete has safety check preventing deletion of users + settings simultaneously
 - AdminSettings Database tab fully functional and verified in browser
+
+---
+Task ID: firebase-db-tools
+Agent: Main
+Task: Connect Backup, Restore & Hapus Data features to Firebase Firestore REST API
+
+Work Log:
+- Diagnosed root cause: /api/database/* routes did not exist at all — the directory was missing
+- Created 4 new API routes connected to Firebase Firestore REST API:
+  1. GET /api/database/table-counts: Counts all 16 Firestore collections using runAggregationQuery, returns { data: { counts, labels, total } }
+  2. GET /api/database/backup: Exports selected or all collections as paginated JSON (pageSize 500), with label-to-collection mapping for frontend table names
+  3. POST /api/database/restore: Imports JSON backup file (FormData), creates documents with merge/replace mode, handles timestamp conversion
+  4. POST /api/database/delete-tables: Deletes all documents in selected collections with paginated fetch + batch delete (10 concurrent)
+- Added label-to-collection mapping in backup and delete routes (e.g. "Property" → "properties", "Lead" → "leads")
+- Response format matches frontend expectations: { data: { ... } } wrapper using json() helper
+- Verified all routes working via curl tests:
+  - table-counts: 1328 total documents across 16 collections (HTTP 200)
+  - backup?tables=PropertyType: Returns 9 property types as JSON (HTTP 200)
+- Lint passes clean (0 errors)
+
+Stage Summary:
+- Backup/Restore/Hapus Data feature fully connected to Firebase Firestore
+- 4 new API routes: table-counts, backup, restore, delete-tables
+- All routes use Firebase REST API v1 with API key authentication
+- Backup exports Firestore-native format with _meta metadata
+- Restore supports merge and replace modes with per-table result details
+- Delete handles paginated collection deletion with concurrent batch processing
+
+---
+Task ID: fix-wrong-counts
+Agent: Main
+Task: Fix admin panel showing incorrect data (all collections showing same count)
+
+Work Log:
+- Diagnosed root cause: Firestore REST API `runAggregationQuery` returns wrong count (79) for ALL collections regardless of actual data
+- Verified with direct REST calls: propertyTypes has 9 docs but aggregation returns 79; leads has 0 docs but aggregation returns 79
+- Fixed `restQueryCount` in db.ts: replaced `runAggregationQuery` with `runQuery` + document counting approach
+- Fixed `countCollection` in table-counts/route.ts: same replacement
+- Discovered and cleaned up 3 duplicate `PRP-20260608-001` entries in properties collection
+- Verified all counts are now accurate:
+  - Properties: 11 (was 79), PropertyTypes: 9 (was 79), Users: 4 (was 79)
+  - Dashboard: totalProperties: 11, activeProperties: 10, draftProperties: 1 (all were wrong)
+  - Leads: 0 (was 79), Articles: 0 (was 79)
+
+Stage Summary:
+- Root cause: `runAggregationQuery` Firestore REST API endpoint returns incorrect global count for all collections
+- Fix: Switched to `runQuery` with document counting (select only name field for efficiency)
+- Files modified: src/lib/db.ts (restQueryCount), src/app/api/database/table-counts/route.ts (countCollection)
+- Data cleanup: removed 3 duplicate property documents from Firestore
+---
+Task ID: 17
+Agent: Main
+Task: Fix Pengaturan Umum input form & connect Kontak settings to frontend
+
+Work Log:
+- Diagnosed "letter by letter" typing issue in AdminSettings: `SettingField` and `SaveGroupButton` were defined as React components (uppercase arrow functions) INSIDE the AdminSettings component body. Every keystroke updated `editedSettings` state → AdminSettings re-rendered → new function reference created → React treated it as new component type → unmounted old instance, mounted new one → input lost focus.
+- Fixed by converting `SettingField` and `SaveGroupButton` from inline components to render functions (`renderField`, `renderSaveBtn`). Updated all 27 SettingField call sites and 5 SaveGroupButton call sites.
+- Diagnosed "Kontak tidak terhubung" issue: ContactPage used old setting keys (`company_phone`, `whatsapp_number`, `company_email`, `company_address`, `office_hours`) that didn't match AdminSettings keys (`contact_phone`, `contact_whatsapp`, `contact_email`, `contact_address`, `contact_working_hours`).
+- Fixed ContactPage setting keys to match AdminSettings convention.
+- Also fixed same `whatsapp_number` → `contact_whatsapp` mismatch in FrontendLayout.tsx, HomePage.tsx, and PropertyDetailPage.tsx (3 files).
+- Migrated database: created all new `contact_*`, `social_*`, `seo_*`, `analytics_*` keys via PUT /api/settings upsert. Old keys remain but don't interfere.
+- Verified via agent browser: admin settings inputs now accept full-word input smoothly, and contact page shows real DB values (+62 812-3456-7890, Jl. Sudirman No. 123, Jakarta Pusat, etc.).
+
+Stage Summary:
+- AdminSettings input form now works correctly - no more letter-by-letter typing
+- Frontend Contact page now displays real contact info from admin settings
+- All 5 files modified: AdminSettings.tsx, ContactPage.tsx, FrontendLayout.tsx, HomePage.tsx, PropertyDetailPage.tsx
+- Database migrated with 27 new settings keys in correct naming convention

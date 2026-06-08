@@ -47,11 +47,11 @@ export default function ContactPage() {
   };
 
   const companyName = getSetting('site_name', 'TerimaKunci');
-  const companyPhone = getSetting('company_phone', '0812-3456-7890');
-  const companyEmail = getSetting('company_email', 'info@proprnusa.com');
-  const companyAddress = getSetting('company_address', 'Jl. Property No. 1, Bandung');
-  const whatsappNumber = getSetting('whatsapp_number', '6281234567890');
-  const officeHours = getSetting('office_hours', 'Senin - Jumat, 09:00 - 17:00 WIB');
+  const companyPhone = getSetting('contact_phone', '0812-3456-7890');
+  const companyEmail = getSetting('contact_email', 'info@terimakunci.com');
+  const companyAddress = getSetting('contact_address', 'Jl. Property No. 1, Bandung');
+  const whatsappNumber = getSetting('contact_whatsapp', '6281234567890');
+  const officeHours = getSetting('contact_working_hours', 'Senin - Jumat, 09:00 - 17:00 WIB');
 
   const updateField = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));

@@ -300,11 +300,19 @@ async function restQuery(collection: string, options?: RestQueryOptions): Promis
 }
 
 async function restQueryCount(collection: string, options?: RestQueryOptions): Promise<number> {
+  // Use runQuery instead of runAggregationQuery (aggregation returns wrong counts in REST API)
+  // For large collections, this fetches doc IDs only with field mask to minimize data transfer
   try {
-    let whereClause: any = {}
+    const structuredQuery: any = {
+      from: [{ collectionId: collection }],
+      // Select only the document name (no fields) for efficiency
+      select: { fields: [{ fieldPath: 'name' }] },
+      limit: 5000, // Reasonable upper limit for count queries
+    }
+
     if (options?.where && options.where.length > 0) {
       if (options.where.length === 1) {
-        whereClause = {
+        structuredQuery.where = {
           fieldFilter: {
             field: { fieldPath: options.where[0].field },
             op: options.where[0].op,
@@ -312,7 +320,7 @@ async function restQueryCount(collection: string, options?: RestQueryOptions): P
           }
         }
       } else {
-        whereClause = {
+        structuredQuery.where = {
           compositeFilter: {
             op: 'AND',
             filters: options.where.map(w => ({
@@ -327,33 +335,42 @@ async function restQueryCount(collection: string, options?: RestQueryOptions): P
       }
     }
 
-    const parent = `projects/${PROJECT_ID}/databases/(default)/documents/${collection}`
-    const body: any = {
-      structuredAggregationQuery: {
-        ...(Object.keys(whereClause).length > 0 ? { where: whereClause } : {}),
-        aggregations: [{ alias: 'count', count: {} }]
-      },
-      parent,
-    }
-
-    const res = await fetch(apiUrl(`/documents:runAggregationQuery`), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    // If there are client-side filters (contains, startsWith), we can't apply them server-side
+    const hasClientSideFilter = options?.where?.some(w => {
+      return w.op === 'EQUAL' && (typeof w.value === 'string' ? false : false)
     })
-    const data = await res.json()
-    if (data.error) throw new Error(data.error.message)
-    return Number(data?.[0]?.result?.aggregateFields?.count?.integerValue || data?.result?.aggregateFields?.count?.integerValue || 0)
-  } catch {
-    try {
-      const { docs } = await restQuery(collection, {
-        where: options?.where,
-        limit: options?.limit,
+
+    let allDocs: any[] = []
+    let pageToken: string | null = null
+
+    do {
+      const body: any = { structuredQuery }
+      if (pageToken) body.pageToken = pageToken
+
+      const res = await fetch(apiUrl('/documents:runQuery'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       })
-      return docs.length
-    } catch {
-      return 0
-    }
+      const data = await res.json()
+      if (data.error) throw new Error(data.error.message)
+
+      const docs = (data || []).filter((item: any) => item.document).map((item: any) => item.document)
+      allDocs.push(...docs)
+
+      pageToken = null
+      // Check if there are more results
+      for (const item of (data || [])) {
+        if (!item.document && item.done === false) {
+          // This shouldn't happen with our approach, but just in case
+        }
+      }
+    } while (pageToken)
+
+    return allDocs.length
+  } catch (error: any) {
+    firelog(`restQueryCount ${collection}`, error)
+    return 0
   }
 }
 

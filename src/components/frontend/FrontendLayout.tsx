@@ -38,7 +38,7 @@ export default function FrontendLayout({ children }: FrontendLayoutProps) {
   };
 
   const companyName = getSetting('site_name', 'TerimaKunci');
-  const whatsappNumber = getSetting('whatsapp_number', '6281234567890');
+  const whatsappNumber = getSetting('contact_whatsapp', '6281234567890');
   const currentPage = route.page;
 
   const getActiveTab = (): string => {

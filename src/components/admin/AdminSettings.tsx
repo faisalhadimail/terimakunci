@@ -346,8 +346,8 @@ export default function AdminSettings() {
     finally { setDeleteLoading(false); }
   };
 
-  const SettingField = ({ settingKey, label, type = 'text', placeholder = '' }: { settingKey: string; label: string; type?: string; placeholder?: string }) => (
-    <div className="space-y-2">
+  const renderField = ({ settingKey, label, type = 'text', placeholder = '' }: { settingKey: string; label: string; type?: string; placeholder?: string }) => (
+    <div className="space-y-2" key={settingKey}>
       <Label htmlFor={settingKey} className="text-sm font-medium">{label}</Label>
       {type === 'textarea' ? (
         <Textarea
@@ -364,8 +364,8 @@ export default function AdminSettings() {
     </div>
   );
 
-  const SaveGroupButton = ({ group }: { group: string }) => (
-    <Button onClick={() => handleSave(group)} disabled={saving} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
+  const renderSaveBtn = (group: string) => (
+    <Button key={`save-${group}`} onClick={() => handleSave(group)} disabled={saving} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
       {saving && lastSavedGroup === group ? <Loader2 className="h-3 w-3 animate-spin" /> : lastSavedGroup === group ? <CheckCircle2 className="h-3 w-3" /> : <Save className="h-3 w-3" />}
       {lastSavedGroup === group ? 'Tersimpan' : 'Simpan'}
     </Button>
@@ -419,15 +419,15 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><Settings className="h-4 w-4 text-emerald-600" /> Pengaturan Umum</CardTitle>
                   <CardDescription>Nama, logo, dan informasi dasar website</CardDescription>
                 </div>
-                <SaveGroupButton group="general" />
+                {renderSaveBtn('general')}
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="site_name" label="Nama Website" placeholder="TerimaKunci" />
-              <SettingField settingKey="site_tagline" label="Tagline" placeholder="Jual Beli Properti Terpercaya" />
-              <SettingField settingKey="site_logo" label="Logo URL" placeholder="https://example.com/logo.png" />
-              <SettingField settingKey="site_favicon" label="Favicon URL" placeholder="https://example.com/favicon.ico" />
-              <SettingField settingKey="site_description" label="Deskripsi Website" type="textarea" placeholder="Deskripsi singkat website" />
+              {renderField({ settingKey: 'site_name', label: 'Nama Website', placeholder: 'TerimaKunci' })}
+              {renderField({ settingKey: 'site_tagline', label: 'Tagline', placeholder: 'Jual Beli Properti Terpercaya' })}
+              {renderField({ settingKey: 'site_logo', label: 'Logo URL', placeholder: 'https://example.com/logo.png' })}
+              {renderField({ settingKey: 'site_favicon', label: 'Favicon URL', placeholder: 'https://example.com/favicon.ico' })}
+              {renderField({ settingKey: 'site_description', label: 'Deskripsi Website', type: 'textarea', placeholder: 'Deskripsi singkat website' })}
             </CardContent>
           </Card>
         </TabsContent>
@@ -441,16 +441,16 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><Phone className="h-4 w-4 text-emerald-600" /> Kontak</CardTitle>
                   <CardDescription>Informasi kontak yang ditampilkan di website</CardDescription>
                 </div>
-                <SaveGroupButton group="contact" />
+                {renderSaveBtn('contact')}
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="contact_phone" label="Telepon" placeholder="+62 xxx" />
-              <SettingField settingKey="contact_whatsapp" label="WhatsApp" placeholder="+62 xxx" />
-              <SettingField settingKey="contact_email" label="Email" placeholder="info@terimakunci.com" type="email" />
-              <SettingField settingKey="contact_address" label="Alamat" placeholder="Alamat kantor" />
-              <SettingField settingKey="contact_map_embed" label="Google Maps Embed URL" placeholder="https://maps.google.com/..." />
-              <SettingField settingKey="contact_working_hours" label="Jam Operasional" placeholder="Sen-Sab 09:00-17:00" />
+              {renderField({ settingKey: 'contact_phone', label: 'Telepon', placeholder: '+62 xxx' })}
+              {renderField({ settingKey: 'contact_whatsapp', label: 'WhatsApp', placeholder: '+62 xxx' })}
+              {renderField({ settingKey: 'contact_email', label: 'Email', placeholder: 'info@terimakunci.com', type: 'email' })}
+              {renderField({ settingKey: 'contact_address', label: 'Alamat', placeholder: 'Alamat kantor' })}
+              {renderField({ settingKey: 'contact_map_embed', label: 'Google Maps Embed URL', placeholder: 'https://maps.google.com/...' })}
+              {renderField({ settingKey: 'contact_working_hours', label: 'Jam Operasional', placeholder: 'Sen-Sab 09:00-17:00' })}
             </CardContent>
           </Card>
         </TabsContent>
@@ -464,15 +464,15 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><Share2 className="h-4 w-4 text-emerald-600" /> Sosial Media</CardTitle>
                   <CardDescription>Link sosial media website</CardDescription>
                 </div>
-                <SaveGroupButton group="social" />
+                {renderSaveBtn('social')}
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="social_facebook" label="Facebook URL" placeholder="https://facebook.com/..." />
-              <SettingField settingKey="social_instagram" label="Instagram URL" placeholder="https://instagram.com/..." />
-              <SettingField settingKey="social_youtube" label="YouTube URL" placeholder="https://youtube.com/..." />
-              <SettingField settingKey="social_tiktok" label="TikTok URL" placeholder="https://tiktok.com/..." />
-              <SettingField settingKey="social_linkedin" label="LinkedIn URL" placeholder="https://linkedin.com/..." />
+              {renderField({ settingKey: 'social_facebook', label: 'Facebook URL', placeholder: 'https://facebook.com/...' })}
+              {renderField({ settingKey: 'social_instagram', label: 'Instagram URL', placeholder: 'https://instagram.com/...' })}
+              {renderField({ settingKey: 'social_youtube', label: 'YouTube URL', placeholder: 'https://youtube.com/...' })}
+              {renderField({ settingKey: 'social_tiktok', label: 'TikTok URL', placeholder: 'https://tiktok.com/...' })}
+              {renderField({ settingKey: 'social_linkedin', label: 'LinkedIn URL', placeholder: 'https://linkedin.com/...' })}
             </CardContent>
           </Card>
         </TabsContent>
@@ -487,16 +487,16 @@ export default function AdminSettings() {
                     <CardTitle className="text-base flex items-center gap-2"><Search className="h-4 w-4 text-emerald-600" /> SEO Meta</CardTitle>
                     <CardDescription>Pengaturan SEO global website</CardDescription>
                   </div>
-                  <SaveGroupButton group="seo" />
+                  {renderSaveBtn('seo')}
                 </div>
               </CardHeader>
               <CardContent className="grid gap-5 sm:grid-cols-2">
-                <SettingField settingKey="seo_meta_title" label="Default Meta Title" placeholder="TerimaKunci - Jual Beli Properti" />
-                <SettingField settingKey="seo_canonical_url" label="Canonical URL" placeholder="https://www.terimakunci.com" />
-                <SettingField settingKey="seo_meta_description" label="Default Meta Description" type="textarea" placeholder="Deskripsi default untuk SEO" />
-                <SettingField settingKey="seo_meta_keywords" label="Default Meta Keywords" placeholder="properti, jual, beli, rumah" />
-                <SettingField settingKey="seo_robots" label="Robots Meta" placeholder="index, follow" />
-                <SettingField settingKey="seo_og_image" label="Default OG Image URL" placeholder="https://example.com/og.jpg" />
+                {renderField({ settingKey: 'seo_meta_title', label: 'Default Meta Title', placeholder: 'TerimaKunci - Jual Beli Properti' })}
+                {renderField({ settingKey: 'seo_canonical_url', label: 'Canonical URL', placeholder: 'https://www.terimakunci.com' })}
+                {renderField({ settingKey: 'seo_meta_description', label: 'Default Meta Description', type: 'textarea', placeholder: 'Deskripsi default untuk SEO' })}
+                {renderField({ settingKey: 'seo_meta_keywords', label: 'Default Meta Keywords', placeholder: 'properti, jual, beli, rumah' })}
+                {renderField({ settingKey: 'seo_robots', label: 'Robots Meta', placeholder: 'index, follow' })}
+                {renderField({ settingKey: 'seo_og_image', label: 'Default OG Image URL', placeholder: 'https://example.com/og.jpg' })}
               </CardContent>
             </Card>
 
@@ -677,15 +677,15 @@ export default function AdminSettings() {
                   <CardTitle className="text-base flex items-center gap-2"><BarChart3 className="h-4 w-4 text-emerald-600" /> Analytics</CardTitle>
                   <CardDescription>Kode tracking dan analytics</CardDescription>
                 </div>
-                <SaveGroupButton group="analytics" />
+                {renderSaveBtn('analytics')}
               </div>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
-              <SettingField settingKey="analytics_ga_id" label="Google Analytics ID" placeholder="G-XXXXXXXXXX" />
-              <SettingField settingKey="analytics_gtm_id" label="Google Tag Manager ID" placeholder="GTM-XXXXXXX" />
-              <SettingField settingKey="analytics_fb_pixel" label="Facebook Pixel ID" placeholder="XXXXXXXXXXXXXXX" />
-              <SettingField settingKey="analytics_head_scripts" label="Custom Head Scripts" type="textarea" placeholder="Kode JavaScript yang di-inject di head" />
-              <SettingField settingKey="analytics_body_scripts" label="Custom Body Scripts" type="textarea" placeholder="Kode JavaScript yang di-inject di body" />
+              {renderField({ settingKey: 'analytics_ga_id', label: 'Google Analytics ID', placeholder: 'G-XXXXXXXXXX' })}
+              {renderField({ settingKey: 'analytics_gtm_id', label: 'Google Tag Manager ID', placeholder: 'GTM-XXXXXXX' })}
+              {renderField({ settingKey: 'analytics_fb_pixel', label: 'Facebook Pixel ID', placeholder: 'XXXXXXXXXXXXXXX' })}
+              {renderField({ settingKey: 'analytics_head_scripts', label: 'Custom Head Scripts', type: 'textarea', placeholder: 'Kode JavaScript yang di-inject di head' })}
+              {renderField({ settingKey: 'analytics_body_scripts', label: 'Custom Body Scripts', type: 'textarea', placeholder: 'Kode JavaScript yang di-inject di body' })}
             </CardContent>
           </Card>
         </TabsContent>
