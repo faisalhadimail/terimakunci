@@ -87,7 +87,8 @@ export default function AdminArticleForm() {
         if (isEdit && articleId) {
           const res = await fetchWithAuth(`/api/articles/${articleId}`);
           if (res.ok) {
-            const article = await res.json() as Article;
+            const json = await res.json() as { data: Article };
+            const article = json.data;
             form.reset({
               title: article.title || '',
               slug: article.slug || '',

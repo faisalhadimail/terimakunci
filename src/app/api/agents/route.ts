@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { handleCors, json, tryCatch } from '@/lib/api-helpers'
+import { handleCors, json, jsonError, tryCatch, requireAuth } from '@/lib/api-helpers'
 
 // ============ GET - List agents ============
 export async function GET(request: NextRequest) {
@@ -67,4 +67,73 @@ export async function GET(request: NextRequest) {
 
   if (result instanceof Response) return result
   return json({ data: result.data })
+}
+
+// ============ POST - Create agent (admin) ============
+export async function POST(request: NextRequest) {
+  const corsResp = handleCors(request)
+  if (corsResp) return corsResp
+
+  const authUser = requireAuth(request)
+  if (authUser instanceof Response) return authUser
+
+  try {
+    const body = await request.json()
+    const {
+      name,
+      whatsapp,
+      title,
+      email,
+      bio,
+      areaSpec,
+      photo,
+      isActive,
+    } = body
+
+    if (!name) {
+      return jsonError('Agent name is required.', 400)
+    }
+
+    // Generate a user record for the agent if none provided
+    const userId = crypto.randomUUID().replace(/-/g, '').slice(0, 25)
+    const userEmail = email || `agent-${userId.slice(0, 8)}@system.local`
+
+    const [user, agentProfile] = await Promise.all([
+      db.user.create({
+        data: {
+          id: userId,
+          email: userEmail,
+          name,
+          password: 'agent_user',
+          role: 'agent',
+          phone: whatsapp || null,
+        },
+        select: { id: true, email: true, name: true },
+      }),
+      db.agentProfile.create({
+        data: {
+          name,
+          whatsapp: whatsapp || null,
+          title: title || null,
+          email: email || null,
+          bio: bio || null,
+          areaSpec: areaSpec || null,
+          photo: photo || null,
+          isActive: isActive !== undefined ? isActive : true,
+          sortOrder: 0,
+          userId,
+        },
+        include: {
+          user: {
+            select: { id: true, email: true, phone: true, avatar: true, name: true },
+          },
+        },
+      }),
+    ])
+
+    return json({ data: { ...agentProfile, _user: user } }, 201)
+  } catch (error) {
+    console.error('[Create Agent Error]', error)
+    return jsonError('Failed to create agent.', 500)
+  }
 }

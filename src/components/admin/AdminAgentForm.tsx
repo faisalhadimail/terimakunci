@@ -50,7 +50,8 @@ export default function AdminAgentForm() {
     setLoading(true);
     fetchWithAuth(`/api/agents/${agentId}`)
       .then((r) => r.json())
-      .then((agent: AgentProfile) => {
+      .then((json: { data: AgentProfile }) => {
+        const agent = json.data;
         form.reset({
           name: agent.name || '',
           title: agent.title || '',

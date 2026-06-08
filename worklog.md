@@ -1100,3 +1100,30 @@ Stage Summary:
 - Frontend Contact page now displays real contact info from admin settings
 - All 5 files modified: AdminSettings.tsx, ContactPage.tsx, FrontendLayout.tsx, HomePage.tsx, PropertyDetailPage.tsx
 - Database migrated with 27 new settings keys in correct naming convention
+
+---
+Task ID: 18
+Agent: Main
+Task: Fix Lokasi, Agent, and Artikel CRUD in admin panel
+
+Work Log:
+- Diagnosed root cause: API routes for Locations (cities/districts) and Agents only had GET handlers - missing POST for create and no [id]/route.ts for PUT/DELETE
+- Articles API already had POST/PUT/DELETE but AdminArticleForm had wrong response extraction (using `res.json() as Article` instead of `json.data`)
+- AdminAgentForm also had wrong response extraction for edit mode (`json as AgentProfile` instead of `json.data`)
+- Added POST handler to /api/locations/cities/route.ts (create city with auto-slug)
+- Added POST handler to /api/locations/districts/route.ts (create district with auto-slug, verify city exists)
+- Created /api/locations/cities/[id]/route.ts (GET single, PUT update name/slug, DELETE with safety check)
+- Created /api/locations/districts/[id]/route.ts (GET single, PUT update name/slug, DELETE)
+- Added POST handler to /api/agents/route.ts (create agent + auto-create linked User record)
+- Created /api/agents/[id]/route.ts (GET single, PUT update fields, DELETE = soft deactivate isActive:false)
+- Fixed AdminArticleForm edit mode: `await res.json() as Article` → extract `json.data`
+- Fixed AdminAgentForm edit mode: `.then((agent: AgentProfile) =>` → extract `json.data`
+- Fixed missing `requireAuth` import in districts/route.ts
+- Verified all endpoints via curl: POST, PUT, DELETE all return correct responses
+- Verified via agent browser: all three features (Lokasi, Agen, Artikel) can add and edit successfully
+
+Stage Summary:
+- 2 files modified: locations/districts/route.ts, AdminAgentForm.tsx (AdminArticleForm was already fixed by subagent)
+- 4 new route files created: cities/[id], districts/[id], agents/[id]
+- 2 files with POST handlers added: cities/route.ts, agents/route.ts
+- All CRUD operations verified working for Lokasi, Agen, and Artikel
